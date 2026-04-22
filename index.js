@@ -3,6 +3,10 @@ import {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   REST,
   Routes,
   SlashCommandBuilder
@@ -19,58 +23,33 @@ const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
 
 // ================= DEBUG =================
-console.log("🔐 TOKEN OK:", !!TOKEN);
-console.log("🆔 CLIENT_ID OK:", !!CLIENT_ID);
-console.log("🏠 GUILD_ID OK:", !!GUILD_ID);
+console.log("🔐 TOKEN:", !!TOKEN);
+console.log("🆔 CLIENT_ID:", !!CLIENT_ID);
+console.log("🏠 GUILD_ID:", !!GUILD_ID);
+
+// ================= CARRINHO =================
+const carrinho = new Map();
 
 // ================= PREÇOS =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
-  transmissao: { street: 10000, sport: 15000, race: 20000 },
-  suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
-  blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
   motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
   turbo: { "1": 60000 },
-  hidraulica: { padrao: 40000 },
-
   visual: {
-    buzina: 20000,
     xenon: 40000,
     neon: 30000,
     rodas: 90000,
-    cor_rodas: 20000,
-    acess_rodas: 4000,
-    pintura_primaria: 10000,
-    pintura_secundaria: 10000,
-    fumaca: 30000,
-    placa: 10000
+    pintura: 10000,
+    spoiler: 20000,
+    escapamento: 10000
   }
 };
 
-// ================= COMANDOS =================
+// ================= COMANDO =================
 const commands = [
   new SlashCommandBuilder()
-    .setName("calc")
-    .setDescription("🚗 Calculadora Bella Motors")
-
-    // 🔥 OBRIGATÓRIOS PRIMEIRO
-    .addStringOption(opt =>
-      opt.setName("itens")
-        .setDescription("Ex: freios street, motor sport, turbo 1")
-        .setRequired(true)
-    )
-    .addStringOption(opt =>
-      opt.setName("id")
-        .setDescription("ID do Discord do cliente")
-        .setRequired(true)
-    )
-
-    // ⚡ OPCIONAL POR ÚLTIMO
-    .addIntegerOption(opt =>
-      opt.setName("desconto")
-        .setDescription("Desconto em %")
-        .setRequired(false)
-    )
+    .setName("oficina")
+    .setDescription("🚗 Abrir oficina Bella Motors")
 ].map(c => c.toJSON());
 
 // ================= REGISTRAR COMANDOS =================
@@ -85,66 +64,154 @@ async function registerCommands() {
       { body: commands }
     );
 
-    console.log("✅ COMANDOS REGISTRADOS COM SUCESSO!");
+    console.log("✅ Comandos registrados!");
   } catch (err) {
-    console.log("❌ ERRO AO REGISTRAR:", err);
+    console.log("❌ Erro comandos:", err);
   }
 }
 
-// ================= CALCULO =================
+// ================= FUNÇÕES =================
 function getPrice(cat, item) {
-  if (!itens[cat]) return 0;
-  return itens[cat][item] || 0;
+  return itens[cat]?.[item] || 0;
+}
+
+// ================= MENUS =================
+function menuCategorias() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("categoria")
+      .setPlaceholder("🚗 Escolha a categoria")
+      .addOptions(
+        { label: "Freios", value: "freios" },
+        { label: "Motor", value: "motor" },
+        { label: "Turbo", value: "turbo" },
+        { label: "Visual", value: "visual" }
+      )
+  );
+}
+
+function botaoFinalizar() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("finalizar")
+      .setLabel("💰 Finalizar Orçamento")
+      .setStyle(ButtonStyle.Success)
+  );
 }
 
 // ================= READY =================
 client.once("ready", async () => {
-  console.log(`🔥 BOT ONLINE COMO ${client.user.tag}`);
+  console.log(`🔥 Bot online como ${client.user.tag}`);
 
   await registerCommands();
 });
 
-// ================= INTERAÇÃO =================
+// ================= INTERAÇÕES =================
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "calc") {
-    const raw = interaction.options.getString("itens");
-    const discordId = interaction.options.getString("id");
-    const desconto = interaction.options.getInteger("desconto") || 0;
+  // ================= COMANDO =================
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === "oficina") {
 
-    let total = 0;
+      carrinho.set(interaction.user.id, []);
 
-    const list = raw.toLowerCase().split(",");
+      return interaction.reply({
+        content: "🚗 **Oficina Bella Motors aberta! Escolha as peças abaixo:**",
+        components: [menuCategorias(), botaoFinalizar()],
+        ephemeral: true
+      });
+    }
+  }
 
-    for (const item of list) {
-      const parts = item.trim().split(" ");
-      const cat = parts[0];
-      const name = parts.slice(1).join(" ");
+  // ================= MENU =================
+  if (interaction.isStringSelectMenu()) {
 
-      total += getPrice(cat, name);
+    // categoria
+    if (interaction.customId === "categoria") {
+      const cat = interaction.values[0];
+
+      const options = Object.keys(itens[cat]).map(key => ({
+        label: `${key} - R$ ${itens[cat][key]}`,
+        value: `${cat}|${key}`
+      }));
+
+      const menu = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("item")
+          .setPlaceholder("Escolha a peça")
+          .addOptions(options)
+      );
+
+      return interaction.update({
+        content: `🔧 Categoria: **${cat}**`,
+        components: [menu, botaoFinalizar()]
+      });
     }
 
-    const final = total - (total * desconto / 100);
+    // item
+    if (interaction.customId === "item") {
+      const [cat, item] = interaction.values[0].split("|");
 
-    const embed = new EmbedBuilder()
-      .setTitle("🚗 Bella Motors - Calculadora")
-      .setColor(0xff0000)
-      .addFields(
-        { name: "🆔 Cliente Discord", value: discordId, inline: false },
-        { name: "💸 Total sem desconto", value: `R$ ${total.toLocaleString()}`, inline: true },
-        { name: "📉 Desconto", value: `${desconto}%`, inline: true },
-        { name: "💰 Total final", value: `R$ ${final.toLocaleString()}`, inline: false }
-      )
-      .setFooter({ text: "Bella Motors - Sistema automático" });
+      const userCart = carrinho.get(interaction.user.id) || [];
 
-    await interaction.reply({ embeds: [embed] });
+      userCart.push({
+        cat,
+        item,
+        price: getPrice(cat, item)
+      });
+
+      carrinho.set(interaction.user.id, userCart);
+
+      const total = userCart.reduce((a, b) => a + b.price, 0);
+
+      return interaction.reply({
+        content: `✔ Adicionado: **${cat} ${item}**\n💰 Total: R$ ${total}`,
+        ephemeral: true
+      });
+    }
+  }
+
+  // ================= BOTÃO FINALIZAR =================
+  if (interaction.isButton()) {
+
+    if (interaction.customId === "finalizar") {
+
+      const userCart = carrinho.get(interaction.user.id) || [];
+
+      if (userCart.length === 0) {
+        return interaction.reply({
+          content: "❌ Seu carrinho está vazio!",
+          ephemeral: true
+        });
+      }
+
+      const total = userCart.reduce((a, b) => a + b.price, 0);
+
+      const embed = new EmbedBuilder()
+        .setTitle("🚗 Orçamento Bella Motors")
+        .setColor(0xff0000)
+        .setDescription(
+          userCart
+            .map(i => `• ${i.cat} ${i.item} - R$ ${i.price}`)
+            .join("\n")
+        )
+        .addFields(
+          { name: "💰 Total final", value: `R$ ${total}` }
+        );
+
+      carrinho.delete(interaction.user.id);
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
   }
 });
 
 // ================= LOGIN =================
 if (!TOKEN) {
-  console.log("❌ TOKEN NÃO ENCONTRADO");
+  console.log("❌ TOKEN NÃO DEFINIDO");
 } else {
   client.login(TOKEN);
 }
