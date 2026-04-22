@@ -43,71 +43,33 @@ const itens = {
     pintura_primaria: 10000,
     pintura_secundaria: 10000,
     fumaca: 30000,
-    placa: 10000,
-    spoiler: 20000,
-    parachoque_dian: 20000,
-    parachoque_tras: 20000,
-    paralama_dian: 15000,
-    paralama_tras: 15000,
-    saia: 15000,
-    chassis: 20000,
-    grade: 10000,
-    assento: 10000,
-    capo: 15000,
-    escapamento: 10000,
-    teto: 10000,
-    decal: 30000,
-    tanque: 20000,
-    design: 20000,
-    suporte: 30000,
-    filtro_ar: 20000,
-    bloco_motor: 20000,
-    capa_farol: 15000,
-    portas: 30000
-  },
-
-  interior: {
-    enfeites: 40000,
-    painel: 20000,
-    placa: 50000,
-    ponteiros: 20000,
-    banco: 30000,
-    design: 30000,
-    volante: 35000,
-    som: 30000,
-    porta_mala: 30000,
-    cambio: 35000,
-    janelas: 30000
-  },
-
-  vidros: {
-    fume100: 40000,
-    fume70: 40000,
-    fume50: 40000,
-    fume40: 40000,
-    fume30: 40000
+    placa: 10000
   }
 };
 
-// ================= COMANDO =================
+// ================= COMANDOS =================
 const commands = [
   new SlashCommandBuilder()
     .setName("calc")
     .setDescription("🚗 Calculadora Bella Motors")
+
+    // 🔥 OBRIGATÓRIOS PRIMEIRO
     .addStringOption(opt =>
       opt.setName("itens")
         .setDescription("Ex: freios street, motor sport, turbo 1")
         .setRequired(true)
     )
-    .addIntegerOption(opt =>
-      opt.setName("desconto")
-        .setDescription("Desconto em %")
-        .setRequired(false)
-    )
     .addStringOption(opt =>
       opt.setName("id")
         .setDescription("ID do Discord do cliente")
         .setRequired(true)
+    )
+
+    // ⚡ OPCIONAL POR ÚLTIMO
+    .addIntegerOption(opt =>
+      opt.setName("desconto")
+        .setDescription("Desconto em %")
+        .setRequired(false)
     )
 ].map(c => c.toJSON());
 
@@ -116,7 +78,7 @@ async function registerCommands() {
   try {
     const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-    console.log("📡 Registrando comandos no Discord...");
+    console.log("📡 Registrando comandos...");
 
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -125,7 +87,7 @@ async function registerCommands() {
 
     console.log("✅ COMANDOS REGISTRADOS COM SUCESSO!");
   } catch (err) {
-    console.log("❌ ERRO AO REGISTRAR COMANDOS:", err);
+    console.log("❌ ERRO AO REGISTRAR:", err);
   }
 }
 
@@ -148,8 +110,8 @@ client.on("interactionCreate", async interaction => {
 
   if (interaction.commandName === "calc") {
     const raw = interaction.options.getString("itens");
-    const desconto = interaction.options.getInteger("desconto") || 0;
     const discordId = interaction.options.getString("id");
+    const desconto = interaction.options.getInteger("desconto") || 0;
 
     let total = 0;
 
@@ -182,7 +144,7 @@ client.on("interactionCreate", async interaction => {
 
 // ================= LOGIN =================
 if (!TOKEN) {
-  console.log("❌ TOKEN NÃO ENCONTRADO!");
+  console.log("❌ TOKEN NÃO ENCONTRADO");
 } else {
   client.login(TOKEN);
 }
