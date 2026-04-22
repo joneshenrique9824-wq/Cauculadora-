@@ -28,6 +28,9 @@ const EPHEMERAL = 1 << 6;
 const sessions = new Map();
 const logs = [];
 
+// ================= CACHE (ANTI LAG) =================
+const menuCache = new Map();
+
 // ================= FULL TUNING =================
 const FULL_TUNING = [
   { cat: "freios", item: "race", price: 20000 },
@@ -64,23 +67,31 @@ function getSession(userId) {
   return sessions.get(userId);
 }
 
+// ================= SAFE UPDATE =================
+async function safeUpdate(interaction, payload) {
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return await interaction.followUp(payload);
+    }
+    return await interaction.update(payload);
+  } catch (e) {
+    console.log("Update ignorado:", e.message);
+  }
+}
+
 // ================= LOG =================
 function addLog(session, interaction, total) {
   const log = {
-    clienteId: session.userId,
     clienteNome: interaction.user.username,
-    mecanicoId: interaction.user.id,
     mecanicoNome: interaction.user.username,
     itens: session.items,
     total,
     data: new Date().toLocaleString("pt-BR")
   };
-
   logs.push(log);
-  return log;
 }
 
-// ================= PAINEL =================
+// ================= PAINEL (LEVE) =================
 function painel(session) {
 
   const total = session.items.reduce((a, b) => a + b.price, 0);
@@ -89,68 +100,45 @@ function painel(session) {
     .setTitle("🚗 OVER SPEED • OFICINA AUTOMOTIVA")
     .setColor(0x111111)
     .setDescription(
-      "💎 Sistema profissional de customização automotiva desenvolvido para gestão completa de performance e estética veicular.\n\n" +
-      "🔧 Permite aplicação de upgrades completos ou modificações individuais com cálculo automático em tempo real.\n\n" +
-      "⚙️ Controle total sobre componentes e serviços mecânicos.\n\n" +
-      "💎 FULL TUNING disponível para instalação completa de performance.\n\n" +
-      "📊 Interface otimizada para roleplay profissional."
+      "💎 Sistema profissional de tuning automotivo\n" +
+      "⚙ Performance + estética + controle total\n\n" +
+      "🚀 Resposta otimizada e fluida"
     )
     .addFields(
-      {
-        name: "📦 Itens",
-        value: session.items.length ? `${session.items.length} upgrades` : "Nenhum"
-      },
-      {
-        name: "💰 Total",
-        value: `R$ ${total}`
-      },
-      {
-        name: "💎 FULL TUNING",
-        value: session.fullActive ? "🟢 ATIVO" : "🔴 OFF"
-      }
+      { name: "📦 Itens", value: `${session.items.length}`, inline: true },
+      { name: "💰 Total", value: `R$ ${total}`, inline: true },
+      { name: "💎 FULL", value: session.fullActive ? "🟢 ON" : "🔴 OFF", inline: true }
     )
-    .setFooter({ text: "OVER SPEED • Sistema Automotivo RP" });
+    .setFooter({ text: "OVER SPEED SYSTEM" });
 }
 
-// ================= MENU =================
-function menu() {
-  return new ActionRowBuilder().addComponents(
+// ================= MENU CACHE =================
+function getMenu(cat) {
+
+  if (menuCache.has(cat)) return menuCache.get(cat);
+
+  const options = Object.keys(itens[cat]).map(i => ({
+    label: `${i} - R$ ${itens[cat][i]}`,
+    value: `${cat}|${i}`
+  }));
+
+  const menu = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId("menu")
-      .setPlaceholder("🔧 Categoria")
-      .addOptions(
-        { label: "Motor", value: "motor" },
-        { label: "Freios", value: "freios" },
-        { label: "Transmissão", value: "transmissao" },
-        { label: "Suspensão", value: "suspensao" },
-        { label: "Turbo", value: "turbo" },
-        { label: "Hidráulica", value: "hidraulica" }
-      )
+      .setCustomId("item")
+      .setPlaceholder("Escolha peça")
+      .addOptions(options)
   );
+
+  menuCache.set(cat, menu);
+  return menu;
 }
 
 // ================= BOTÕES =================
 function buttons() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("full")
-      .setLabel("💎 FULL TUNING")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("home")
-      .setLabel("🏠 HOME")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("clear")
-      .setLabel("🧹 LIMPAR")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("finish")
-      .setLabel("💰 FINALIZAR")
-      .setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId("full").setLabel("💎 FULL").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("clear").setLabel("🧹 LIMPAR").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("finish").setLabel("💰 FINALIZAR").setStyle(ButtonStyle.Success)
   );
 }
 
@@ -164,69 +152,14 @@ client.on("interactionCreate", async interaction => {
 
   const session = getSession(interaction.user.id);
 
-  // ================= OFICINA =================
-  if (interaction.isChatInputCommand()) {
+  // ================= ABRIR =================
+  if (interaction.isChatInputCommand() && interaction.commandName === "oficina") {
 
-    if (interaction.commandName === "oficina") {
-
-      return interaction.reply({
-        embeds: [painel(session)],
-        components: [menu(), buttons()],
-        flags: EPHEMERAL
-      });
-    }
-
-    // ================= PRONTUÁRIO =================
-    if (interaction.commandName === "prontuario") {
-
-      if (!logs.length) {
-        return interaction.reply({
-          content: "❌ Nenhum serviço registrado",
-          flags: EPHEMERAL
-        });
-      }
-
-      const last = logs.slice(-5).reverse();
-
-      return interaction.reply({
-        embeds: last.map(l =>
-          new EmbedBuilder()
-            .setTitle("📒 PRONTUÁRIO OVER SPEED")
-            .setColor(0x222222)
-            .setDescription(l.itens.map(i => `• ${i.cat} ${i.item} - R$ ${i.price}`).join("\n"))
-            .addFields(
-              { name: "👤 Cliente", value: l.clienteNome },
-              { name: "🔧 Mecânico", value: l.mecanicoNome },
-              { name: "💰 Total", value: `R$ ${l.total}` },
-              { name: "📅 Data", value: l.data }
-            )
-        ),
-        flags: EPHEMERAL
-      });
-    }
-  }
-
-  // ================= MENU =================
-  if (interaction.isStringSelectMenu() && interaction.customId === "menu") {
-
-    const cat = interaction.values[0];
-
-    const options = Object.keys(itens[cat]).map(i => ({
-      label: `${i} - R$ ${itens[cat][i]}`,
-      value: `${cat}|${i}`
-    }));
-
-    const select = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("item")
-        .setPlaceholder("Escolha peça")
-        .addOptions(options)
-    );
-
-    return interaction.update({
+    return interaction.reply({
       embeds: [painel(session)],
-      components: [select, buttons()]
-    }).catch(() => {});
+      components: [getMenu("motor"), buttons()],
+      flags: EPHEMERAL
+    });
   }
 
   // ================= ITEM =================
@@ -241,28 +174,30 @@ client.on("interactionCreate", async interaction => {
     });
 
     return interaction.reply({
-      content: `✔ Aplicado: ${cat} ${item}`,
+      content: "✔ Aplicado com sucesso",
       flags: EPHEMERAL
     });
   }
 
-  // ================= FULL TOGGLE =================
+  // ================= FULL =================
   if (interaction.customId === "full") {
+
+    const keys = new Set(FULL_TUNING.map(f => `${f.cat}|${f.item}`));
 
     if (!session.fullActive) {
       session.items.push(...FULL_TUNING);
       session.fullActive = true;
     } else {
       session.items = session.items.filter(i =>
-        !FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
+        !keys.has(`${i.cat}|${i.item}`)
       );
       session.fullActive = false;
     }
 
-    return interaction.update({
+    return safeUpdate(interaction, {
       embeds: [painel(session)],
-      components: [menu(), buttons()]
-    }).catch(() => {});
+      components: [getMenu("motor"), buttons()]
+    });
   }
 
   // ================= LIMPAR =================
@@ -271,21 +206,14 @@ client.on("interactionCreate", async interaction => {
     session.items = [];
     session.fullActive = false;
 
-    return interaction.update({
+    return safeUpdate(interaction, {
       embeds: [painel(session)],
-      components: [menu(), buttons()]
-    }).catch(() => {});
+      components: [getMenu("motor"), buttons()]
+    });
   }
 
   // ================= FINALIZAR =================
   if (interaction.customId === "finish") {
-
-    if (!session.items.length) {
-      return interaction.reply({
-        content: "❌ Nenhum serviço selecionado",
-        flags: EPHEMERAL
-      });
-    }
 
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
@@ -295,7 +223,7 @@ client.on("interactionCreate", async interaction => {
     session.fullActive = false;
 
     return interaction.reply({
-      content: `🚗 Serviço finalizado com sucesso!\n💰 Total: R$ ${total}`,
+      content: `🚗 Serviço finalizado!\n💰 Total: R$ ${total}`,
       flags: EPHEMERAL
     });
   }
