@@ -23,11 +23,13 @@ const GUILD_ID = process.env.GUILD_ID?.trim();
 
 const EPHEMERAL = 1 << 6;
 
-// ================= DATABASE SIMULADA =================
+// ================= DATABASE =================
 const db = {
-  services: [],
-  users: new Map()
+  services: []
 };
+
+// ================= SESSIONS =================
+const sessions = new Map();
 
 // ================= FULL KIT =================
 const FULL_KIT = [
@@ -49,8 +51,8 @@ const shop = {
   hidraulica: { padrao: 40000 }
 };
 
-// ================= SESSION =================
-const sessions = new Map();
+// ================= HELPERS =================
+const price = (c, i) => shop[c]?.[i] || 0;
 
 function session(id) {
   if (!sessions.has(id)) {
@@ -58,41 +60,38 @@ function session(id) {
       id,
       items: [],
       full: false,
-      page: "home"
+      plate: null
     });
   }
   return sessions.get(id);
 }
 
-// ================= PRICE =================
-const price = (c, i) => shop[c]?.[i] || 0;
-
-// ================= SERVICE ID =================
-function generateServiceId() {
+function serviceId() {
   return `OS-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 }
 
 // ================= HOME PANEL =================
-function homePanel(s) {
+function home(s) {
 
   const total = s.items.reduce((a, b) => a + b.price, 0);
 
   return new EmbedBuilder()
-    .setTitle("🚗 OVER SPEED • ENTERPRISE GARAGE")
-    .setColor(0x0a0a0a)
+    .setTitle("🚗 LS CUSTOMS • OVER SPEED GTA RP")
+    .setColor(0x0b0b0b)
     .setDescription(
-      "💎 **SISTEMA ENTERPRISE DE OFICINA RP**\n\n" +
-      "🔧 Gerenciamento profissional de modificações\n" +
-      "⚙ Controle completo de performance veicular\n" +
-      "📊 Sistema de serviço com rastreio único\n\n" +
-      "🚀 Pronto para servidores RP grandes"
+      "💎 **OFICINA AUTOMOTIVA GTA ROLEPLAY**\n\n" +
+      "🔧 Sistema de tuning profissional estilo LS Customs\n" +
+      "🚗 Controle total de modificações por veículo\n" +
+      "⚙ Diagnóstico e upgrades avançados\n\n" +
+      "📌 Selecione uma categoria para iniciar o serviço"
     )
     .addFields(
+      { name: "🚘 PLACA", value: s.plate || "Não definida", inline: true },
       { name: "📦 ITENS", value: `${s.items.length}`, inline: true },
       { name: "💰 TOTAL", value: `R$ ${total}`, inline: true },
       { name: "💎 FULL KIT", value: s.full ? "ATIVO 🟢" : "OFF 🔴", inline: true }
     )
-    .setFooter({ text: "OVER SPEED ENTERPRISE SYSTEM" });
+    .setFooter({ text: "LS CUSTOMS • OVER SPEED RP SYSTEM" });
 }
 
 // ================= MENU =================
@@ -100,7 +99,7 @@ function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("🚗 Selecionar categoria")
+      .setPlaceholder("🚗 Escolher categoria")
       .addOptions(
         { label: "Motor", value: "motor" },
         { label: "Freios", value: "freios" },
@@ -115,16 +114,17 @@ function menu() {
 // ================= BUTTONS =================
 function buttons() {
   return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("plate").setLabel("🚘 DEFINIR PLACA").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("full").setLabel("💎 FULL KIT").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("clear").setLabel("🧹 RESET").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("clear").setLabel("🧹 LIMPAR").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("finish").setLabel("💰 FINALIZAR SERVIÇO").setStyle(ButtonStyle.Success)
   );
 }
 
-// ================= REGISTER COMMANDS =================
+// ================= REGISTER =================
 const commands = [
-  new SlashCommandBuilder().setName("oficina").setDescription("🚗 Abrir OVER SPEED"),
-  new SlashCommandBuilder().setName("prontuario").setDescription("📒 Histórico da oficina")
+  new SlashCommandBuilder().setName("oficina").setDescription("🚗 LS Customs OVER SPEED"),
+  new SlashCommandBuilder().setName("prontuario").setDescription("📒 Histórico de serviços")
 ].map(c => c.toJSON());
 
 async function register() {
@@ -138,11 +138,11 @@ async function register() {
 
 // ================= READY =================
 client.once("clientReady", async () => {
-  console.log(`🚗 OVER SPEED ENTERPRISE ONLINE: ${client.user.tag}`);
+  console.log(`🚗 LS CUSTOMS ONLINE: ${client.user.tag}`);
   await register();
 });
 
-// ================= INTERAÇÕES =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async (i) => {
 
   const s = session(i.user.id);
@@ -151,17 +151,17 @@ client.on("interactionCreate", async (i) => {
   if (i.isChatInputCommand() && i.commandName === "oficina") {
 
     return i.reply({
-      embeds: [homePanel(s)],
-      components: [menu()],
+      embeds: [home(s)],
+      components: [menu(), buttons()],
       flags: EPHEMERAL
     });
   }
 
-  // ================= PRONTUÁRIO ENTERPRISE =================
+  // ================= PRONTUÁRIO =================
   if (i.isChatInputCommand() && i.commandName === "prontuario") {
 
     if (db.services.length === 0) {
-      return i.reply({ content: "❌ Nenhum serviço registrado", flags: EPHEMERAL });
+      return i.reply({ content: "❌ Nenhum serviço encontrado", flags: EPHEMERAL });
     }
 
     const last = db.services.slice(-5).reverse();
@@ -171,6 +171,7 @@ client.on("interactionCreate", async (i) => {
         .setTitle(`📒 SERVIÇO ${sv.id}`)
         .setColor(0x222222)
         .addFields(
+          { name: "🚘 Placa", value: sv.plate },
           { name: "👤 Cliente", value: sv.client },
           { name: "🔧 Mecânico", value: sv.mechanic },
           { name: "💰 Total", value: `R$ ${sv.total}` },
@@ -195,7 +196,7 @@ client.on("interactionCreate", async (i) => {
     return i.update({
       embeds: [
         new EmbedBuilder()
-          .setTitle(`🔧 CAT: ${cat.toUpperCase()}`)
+          .setTitle(`🔧 LS CUSTOMS • ${cat.toUpperCase()}`)
           .setColor(0x111111)
       ],
       components: [
@@ -217,7 +218,16 @@ client.on("interactionCreate", async (i) => {
 
     s.items.push({ cat, item, price: price(cat, item) });
 
-    return i.reply({ content: "✔ Adicionado ao serviço", flags: EPHEMERAL });
+    return i.reply({ content: "✔ Modificação aplicada", flags: EPHEMERAL });
+  }
+
+  // ================= PLACA =================
+  if (i.customId === "plate") {
+
+    const plate = `RP-${Math.floor(Math.random() * 99999)}`;
+    s.plate = plate;
+
+    return i.reply({ content: `🚘 Placa definida: ${plate}`, flags: EPHEMERAL });
   }
 
   // ================= FULL KIT =================
@@ -233,7 +243,7 @@ client.on("interactionCreate", async (i) => {
       s.full = false;
     }
 
-    return i.update({ embeds: [homePanel(s)], components: [menu()] });
+    return i.update({ embeds: [home(s)], components: [menu(), buttons()] });
   }
 
   // ================= CLEAR =================
@@ -242,18 +252,19 @@ client.on("interactionCreate", async (i) => {
     s.items = [];
     s.full = false;
 
-    return i.update({ embeds: [homePanel(s)], components: [menu()] });
+    return i.update({ embeds: [home(s)], components: [menu(), buttons()] });
   }
 
-  // ================= FINALIZAR (ENTERPRISE SERVICE) =================
+  // ================= FINAL =================
   if (i.customId === "finish") {
 
     const total = s.items.reduce((a, b) => a + b.price, 0);
 
-    const serviceId = generateServiceId();
+    const id = serviceId();
 
     db.services.push({
-      id: serviceId,
+      id,
+      plate: s.plate,
       client: i.user.username,
       mechanic: i.user.username,
       items: s.items,
@@ -266,8 +277,9 @@ client.on("interactionCreate", async (i) => {
 
     return i.reply({
       content:
-        `🚗 SERVIÇO FINALIZADO\n` +
-        `🆔 ID: ${serviceId}\n` +
+        `🚗 SERVIÇO FINALIZADO LS CUSTOMS\n` +
+        `🆔 ID: ${id}\n` +
+        `🚘 PLACA: ${s.plate}\n` +
         `💰 TOTAL: R$ ${total}`,
       flags: EPHEMERAL
     });
