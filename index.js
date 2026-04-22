@@ -21,7 +21,6 @@ const client = new Client({
 const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
 // ================= SESSÕES =================
 const sessions = new Map();
@@ -36,7 +35,7 @@ const FULL_TUNING = [
   { cat: "hidraulica", item: "padrao", price: 40000 }
 ];
 
-// ================= PREÇOS MOD =================
+// ================= PREÇOS =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
@@ -105,12 +104,12 @@ function menuPrincipal() {
   );
 }
 
-// ================= BOTÕES PREMIUM =================
+// ================= BOTÕES =================
 function botoes() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("full_tuning")
-      .setLabel("💎 FULL TUNING AUTO")
+      .setLabel("💎 FULL TUNING")
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
@@ -145,14 +144,14 @@ client.on("interactionCreate", async interaction => {
       });
 
       return interaction.reply({
-        content: "🚗 **PAINEL BELLA MOTORS PREMIUM ABERTO**",
+        content: "🚗 **PAINEL BELLA MOTORS PREMIUM**",
         components: [menuPrincipal(), botoes()],
         ephemeral: true
       });
     }
   }
 
-  // ================= MENU CATEGORIA =================
+  // ================= CATEGORIA =================
   if (interaction.isStringSelectMenu() && interaction.customId === "menu_cat") {
 
     const session = sessions.get(interaction.user.id);
@@ -200,19 +199,19 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  // ================= FULL TUNING =================
+  // ================= FULL TUNING (SOMA, NÃO LIMPA) =================
   if (interaction.customId === "full_tuning") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
 
-    session.items = [];
+    // adiciona sem apagar nada
     session.items.push(...FULL_TUNING);
 
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
     return interaction.update({
-      content: `💎 FULL TUNING APLICADO COM SUCESSO!\n💰 Total: R$ ${total}`,
+      content: `💎 FULL TUNING ADICIONADO!\n💰 Total atualizado: R$ ${total}`,
       components: [menuPrincipal(), botoes()]
     });
   }
@@ -226,7 +225,7 @@ client.on("interactionCreate", async interaction => {
     session.items = [];
 
     return interaction.update({
-      content: "🧹 Tudo foi limpo!",
+      content: "🧹 Carrinho limpo!",
       components: [menuPrincipal(), botoes()]
     });
   }
@@ -244,34 +243,16 @@ client.on("interactionCreate", async interaction => {
 
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
-    const full = session.items.filter(i =>
-      FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
-    );
-
-    const mods = session.items.filter(i =>
-      !FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
-    );
-
     const embed = new EmbedBuilder()
-      .setTitle("🚗 FULL TUNING PREMIUM")
+      .setTitle("🚗 FULL TUNING FINALIZADO")
       .setColor(0xff0000)
+      .setDescription(
+        session.items.map(i =>
+          `• ${i.cat} ${i.item} → R$ ${i.price}`
+        ).join("\n")
+      )
       .addFields(
-        {
-          name: "💎 FULL TUNING",
-          value: full.length
-            ? full.map(i => `• ${i.cat} ${i.item}`).join("\n")
-            : "Nenhum"
-        },
-        {
-          name: "🎨 MODIFICAÇÕES",
-          value: mods.length
-            ? mods.map(i => `• ${i.cat} ${i.item}`).join("\n")
-            : "Nenhuma"
-        },
-        {
-          name: "💰 TOTAL",
-          value: `R$ ${total}`
-        }
+        { name: "💰 TOTAL FINAL", value: `R$ ${total}` }
       );
 
     sessions.delete(interaction.user.id);
