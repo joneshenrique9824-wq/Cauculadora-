@@ -26,32 +26,41 @@ const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // ================= SESSÕES =================
 const sessions = new Map();
 
-// ================= PREÇOS =================
+// ================= FULL TUNING =================
+const FULL_TUNING = [
+  { cat: "freios", item: "race", price: 20000 },
+  { cat: "transmissao", item: "race", price: 20000 },
+  { cat: "suspensao", item: "4", price: 20000 },
+  { cat: "motor", item: "top", price: 40000 },
+  { cat: "turbo", item: "1", price: 60000 },
+  { cat: "hidraulica", item: "padrao", price: 40000 }
+];
+
+// ================= PREÇOS MOD =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
   suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
-  blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
   motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
   turbo: { "1": 60000 },
+  hidraulica: { padrao: 40000 },
+
   visual: {
     xenon: 40000,
     neon: 30000,
     rodas: 90000,
-    pintura: 20000,
-    spoiler: 20000,
-    escapamento: 10000
+    pintura: 20000
   },
+
   interior: {
     banco: 30000,
     volante: 35000,
-    som: 30000,
-    painel: 20000
+    som: 30000
   },
+
   vidros: {
     fume100: 40000,
-    fume70: 40000,
-    fume50: 40000
+    fume70: 40000
   }
 };
 
@@ -59,14 +68,10 @@ const itens = {
 const commands = [
   new SlashCommandBuilder()
     .setName("tuning")
-    .setDescription("🚗 Painel Premium Bella Motors"),
-
-  new SlashCommandBuilder()
-    .setName("oficina")
-    .setDescription("🔧 Oficina Bella Motors")
+    .setDescription("🚗 Painel Premium Bella Motors")
 ].map(c => c.toJSON());
 
-// ================= REGISTRAR =================
+// ================= REGISTRO =================
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
@@ -95,45 +100,29 @@ function menuPrincipal() {
         { label: "Turbo", value: "turbo" },
         { label: "Visual", value: "visual" },
         { label: "Interior", value: "interior" },
-        { label: "Vidros", value: "vidros" },
-        { label: "Blindagem", value: "blindagem" }
+        { label: "Vidros", value: "vidros" }
       )
   );
 }
 
+// ================= BOTÕES PREMIUM =================
 function botoes() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("voltar")
-      .setLabel("⬅ Voltar")
+      .setCustomId("full_tuning")
+      .setLabel("💎 FULL TUNING AUTO")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("limpar")
+      .setLabel("🧹 LIMPAR")
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId("finalizar")
-      .setLabel("💰 Finalizar Full Tuning")
+      .setLabel("💰 FINALIZAR")
       .setStyle(ButtonStyle.Success)
   );
-}
-
-// ================= LOG =================
-async function sendLog(session) {
-  if (!LOG_CHANNEL_ID) return;
-
-  const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-  if (!channel) return;
-
-  const total = session.items.reduce((a, b) => a + b.price, 0);
-
-  const embed = new EmbedBuilder()
-    .setTitle("🚗 LOG FULL TUNING")
-    .setColor(0xff0000)
-    .addFields(
-      { name: "👤 Cliente", value: session.userId },
-      { name: "💰 Total", value: `R$ ${total}` },
-      { name: "📦 Itens", value: session.items.map(i => `${i.cat} ${i.item} - R$ ${i.price}`).join("\n") }
-    );
-
-  channel.send({ embeds: [embed] });
 }
 
 // ================= READY =================
@@ -142,13 +131,13 @@ client.once("ready", async () => {
   await registerCommands();
 });
 
-// ================= INTERAÇÕES =================
+// ================= INTERAÇÃO =================
 client.on("interactionCreate", async interaction => {
 
   // ================= ABRIR =================
   if (interaction.isChatInputCommand()) {
 
-    if (interaction.commandName === "tuning" || interaction.commandName === "oficina") {
+    if (interaction.commandName === "tuning") {
 
       sessions.set(interaction.user.id, {
         userId: interaction.user.id,
@@ -156,7 +145,7 @@ client.on("interactionCreate", async interaction => {
       });
 
       return interaction.reply({
-        content: "🚗 **PAINEL BELLA MOTORS ABERTO**",
+        content: "🚗 **PAINEL BELLA MOTORS PREMIUM ABERTO**",
         components: [menuPrincipal(), botoes()],
         ephemeral: true
       });
@@ -206,59 +195,91 @@ client.on("interactionCreate", async interaction => {
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
     return interaction.reply({
-      content: `✔ Adicionado: **${cat} ${item}**\n💰 Total parcial: R$ ${total}`,
+      content: `✔ Adicionado: **${cat} ${item}**\n💰 Total: R$ ${total}`,
       ephemeral: true
     });
   }
 
-  // ================= BOTÕES =================
-  if (interaction.isButton()) {
+  // ================= FULL TUNING =================
+  if (interaction.customId === "full_tuning") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
 
-    // VOLTAR
-    if (interaction.customId === "voltar") {
-      return interaction.update({
-        content: "🚗 Painel principal",
-        components: [menuPrincipal(), botoes()]
-      });
-    }
+    session.items = [];
+    session.items.push(...FULL_TUNING);
 
-    // FINALIZAR
-    if (interaction.customId === "finalizar") {
+    const total = session.items.reduce((a, b) => a + b.price, 0);
 
-      if (!session.items.length) {
-        return interaction.reply({
-          content: "❌ Nenhum item selecionado!",
-          ephemeral: true
-        });
-      }
+    return interaction.update({
+      content: `💎 FULL TUNING APLICADO COM SUCESSO!\n💰 Total: R$ ${total}`,
+      components: [menuPrincipal(), botoes()]
+    });
+  }
 
-      const total = session.items.reduce((a, b) => a + b.price, 0);
+  // ================= LIMPAR =================
+  if (interaction.customId === "limpar") {
 
-      const embed = new EmbedBuilder()
-        .setTitle("🚗 FULL TUNING COMPLETO")
-        .setColor(0xff0000)
-        .setDescription(
-          session.items.map(i =>
-            `• ${i.cat} ${i.item} → R$ ${i.price}`
-          ).join("\n")
-        )
-        .addFields(
-          { name: "👤 Cliente", value: session.userId },
-          { name: "💰 Total Final", value: `R$ ${total}` }
-        );
+    const session = sessions.get(interaction.user.id);
+    if (!session) return;
 
-      await sendLog(session);
+    session.items = [];
 
-      sessions.delete(interaction.user.id);
+    return interaction.update({
+      content: "🧹 Tudo foi limpo!",
+      components: [menuPrincipal(), botoes()]
+    });
+  }
 
+  // ================= FINALIZAR =================
+  if (interaction.customId === "finalizar") {
+
+    const session = sessions.get(interaction.user.id);
+    if (!session || !session.items.length) {
       return interaction.reply({
-        embeds: [embed],
+        content: "❌ Nenhum item selecionado!",
         ephemeral: true
       });
     }
+
+    const total = session.items.reduce((a, b) => a + b.price, 0);
+
+    const full = session.items.filter(i =>
+      FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
+    );
+
+    const mods = session.items.filter(i =>
+      !FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
+    );
+
+    const embed = new EmbedBuilder()
+      .setTitle("🚗 FULL TUNING PREMIUM")
+      .setColor(0xff0000)
+      .addFields(
+        {
+          name: "💎 FULL TUNING",
+          value: full.length
+            ? full.map(i => `• ${i.cat} ${i.item}`).join("\n")
+            : "Nenhum"
+        },
+        {
+          name: "🎨 MODIFICAÇÕES",
+          value: mods.length
+            ? mods.map(i => `• ${i.cat} ${i.item}`).join("\n")
+            : "Nenhuma"
+        },
+        {
+          name: "💰 TOTAL",
+          value: `R$ ${total}`
+        }
+      );
+
+    sessions.delete(interaction.user.id);
+
+    return interaction.reply({
+      embeds: [embed],
+      ephemeral: true
+    });
   }
 });
 
