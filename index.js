@@ -66,8 +66,8 @@ function getPrice(cat, item) {
 // ================= COMANDOS =================
 const commands = [
   new SlashCommandBuilder()
-    .setName("tuning")
-    .setDescription("🚗 LS Customs Premium Panel")
+    .setName("oficina")
+    .setDescription("🚗 OVER SPEED Garage - LS Customs RP")
 ].map(c => c.toJSON());
 
 // ================= REGISTRO =================
@@ -79,43 +79,54 @@ async function registerCommands() {
     { body: commands }
   );
 
-  console.log("✅ Comandos registrados!");
+  console.log("✅ OVER SPEED ONLINE!");
 }
 
-// ================= PAINEL HOME =================
-function homePanel(session) {
+// ================= PAINEL PRINCIPAL =================
+function home(session) {
 
   const total = session.items.reduce((a, b) => a + b.price, 0);
 
   return new EmbedBuilder()
-    .setTitle("🚗 LS CUSTOMS • PREMIUM PANEL")
-    .setColor(0x2b2d31)
+    .setTitle("🚗 OVER SPEED GARAGE • LS CUSTOMS RP")
+    .setColor(0x1f1f1f)
     .setDescription(
-      "💎 Oficina Premium LS Customs\n\n" +
-      "Selecione peças ou use FULL TUNING automático\n" +
-      "Sistema inteligente de cálculo"
+      "🔥 **OFICINA MECÂNICA RP OFICIAL** 🔥\n\n" +
+
+      "💎 Bem-vindo à OVER SPEED Garage — onde performance e estilo se encontram.\n\n" +
+
+      "🔧 Aqui você pode realizar upgrades completos no seu veículo com precisão profissional, sistema automatizado e padrão LS Customs.\n\n" +
+
+      "💎 **FULL TUNING:** Instalação completa de performance do veículo.\n" +
+      "➕ Após ativar, você pode adicionar modificações extras livremente.\n\n" +
+
+      "🎨 **CUSTOMIZAÇÃO:** Visual, interior e performance separados por categoria.\n\n" +
+
+      "💰 Sistema automático de cálculo de valores em tempo real.\n\n" +
+
+      "🚗 OVER SPEED • Performance sem limites."
     )
     .addFields(
       {
-        name: "📦 Itens",
+        name: "📦 Peças selecionadas",
         value: session.items.length
-          ? `${session.items.length} selecionados`
-          : "Nenhum item"
+          ? `${session.items.length} upgrades aplicados`
+          : "Nenhuma modificação aplicada"
       },
       {
-        name: "💰 Total",
+        name: "💰 Valor atual",
         value: `R$ ${total}`
       }
     )
-    .setFooter({ text: "LS Customs • Sistema Premium RP" });
+    .setFooter({ text: "OVER SPEED GARAGE • LS Customs RP System" });
 }
 
 // ================= MENU =================
-function menuPanel() {
+function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("🔧 Escolha categoria")
+      .setPlaceholder("🔧 Selecionar categoria de upgrade")
       .addOptions(
         { label: "Motor", value: "motor" },
         { label: "Visual", value: "visual" },
@@ -153,17 +164,17 @@ function buttons() {
 
 // ================= READY =================
 client.once("ready", async () => {
-  console.log(`🔥 Online como ${client.user.tag}`);
+  console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
   await registerCommands();
 });
 
 // ================= INTERAÇÕES =================
 client.on("interactionCreate", async interaction => {
 
-  // ================= ABRIR =================
+  // ================= ABRIR PAINEL =================
   if (interaction.isChatInputCommand()) {
 
-    if (interaction.commandName === "tuning") {
+    if (interaction.commandName === "oficina") {
 
       sessions.set(interaction.user.id, {
         userId: interaction.user.id,
@@ -171,8 +182,8 @@ client.on("interactionCreate", async interaction => {
       });
 
       return interaction.reply({
-        embeds: [homePanel({ items: [] })],
-        components: [menuPanel(), buttons()],
+        embeds: [home({ items: [] })],
+        components: [menu(), buttons()],
         ephemeral: true
       });
     }
@@ -194,12 +205,12 @@ client.on("interactionCreate", async interaction => {
     const select = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId("item")
-        .setPlaceholder("🔧 Escolha peça")
+        .setPlaceholder("🔧 Escolha o upgrade")
         .addOptions(options)
     );
 
     return interaction.update({
-      embeds: [homePanel(session)],
+      embeds: [home(session)],
       components: [select, buttons()]
     });
   }
@@ -219,7 +230,7 @@ client.on("interactionCreate", async interaction => {
     });
 
     return interaction.reply({
-      content: `✔ Adicionado: **${cat} ${item}**`,
+      content: `✔ Upgrade aplicado: **${cat} ${item}**`,
       ephemeral: true
     });
   }
@@ -233,8 +244,8 @@ client.on("interactionCreate", async interaction => {
     session.items.push(...FULL_TUNING);
 
     return interaction.update({
-      embeds: [homePanel(session)],
-      components: [menuPanel(), buttons()]
+      embeds: [home(session)],
+      components: [menu(), buttons()]
     });
   }
 
@@ -245,8 +256,8 @@ client.on("interactionCreate", async interaction => {
     if (!session) return;
 
     return interaction.update({
-      embeds: [homePanel(session)],
-      components: [menuPanel(), buttons()]
+      embeds: [home(session)],
+      components: [menu(), buttons()]
     });
   }
 
@@ -259,8 +270,8 @@ client.on("interactionCreate", async interaction => {
     session.items = [];
 
     return interaction.update({
-      embeds: [homePanel(session)],
-      components: [menuPanel(), buttons()]
+      embeds: [home(session)],
+      components: [menu(), buttons()]
     });
   }
 
@@ -270,7 +281,7 @@ client.on("interactionCreate", async interaction => {
     const session = sessions.get(interaction.user.id);
     if (!session || !session.items.length) {
       return interaction.reply({
-        content: "❌ Nenhum item selecionado!",
+        content: "❌ Nenhuma modificação aplicada!",
         ephemeral: true
       });
     }
@@ -278,7 +289,7 @@ client.on("interactionCreate", async interaction => {
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
     const embed = new EmbedBuilder()
-      .setTitle("🚗 SERVIÇO FINALIZADO")
+      .setTitle("🚗 SERVIÇO FINALIZADO • OVER SPEED")
       .setColor(0x00ff99)
       .setDescription(
         session.items.map(i =>
