@@ -21,7 +21,6 @@ const client = new Client({
 const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
 // ================= SESSÕES =================
 const sessions = new Map();
@@ -36,7 +35,7 @@ const FULL_TUNING = [
   { cat: "hidraulica", item: "padrao", price: 40000 }
 ];
 
-// ================= PREÇOS =================
+// ================= ITENS =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
@@ -56,11 +55,6 @@ const itens = {
     banco: 30000,
     volante: 35000,
     som: 30000
-  },
-
-  vidros: {
-    fume100: 40000,
-    fume70: 40000
   }
 };
 
@@ -73,7 +67,7 @@ function getPrice(cat, item) {
 const commands = [
   new SlashCommandBuilder()
     .setName("tuning")
-    .setDescription("🚗 Oficina RP Premium")
+    .setDescription("🚗 LS Customs Premium Panel")
 ].map(c => c.toJSON());
 
 // ================= REGISTRO =================
@@ -88,24 +82,52 @@ async function registerCommands() {
   console.log("✅ Comandos registrados!");
 }
 
-// ================= PAINEL =================
-function painel() {
+// ================= PAINEL HOME =================
+function homePanel(session) {
+
+  const total = session.items.reduce((a, b) => a + b.price, 0);
+
+  return new EmbedBuilder()
+    .setTitle("🚗 LS CUSTOMS • PREMIUM PANEL")
+    .setColor(0x2b2d31)
+    .setDescription(
+      "💎 Oficina Premium LS Customs\n\n" +
+      "Selecione peças ou use FULL TUNING automático\n" +
+      "Sistema inteligente de cálculo"
+    )
+    .addFields(
+      {
+        name: "📦 Itens",
+        value: session.items.length
+          ? `${session.items.length} selecionados`
+          : "Nenhum item"
+      },
+      {
+        name: "💰 Total",
+        value: `R$ ${total}`
+      }
+    )
+    .setFooter({ text: "LS Customs • Sistema Premium RP" });
+}
+
+// ================= MENU =================
+function menuPanel() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("🚗 Abrir Oficina Premium")
+      .setPlaceholder("🔧 Escolha categoria")
       .addOptions(
-        { label: "🔧 Motor", value: "motor" },
-        { label: "🎨 Visual", value: "visual" },
-        { label: "🪑 Interior", value: "interior" },
-        { label: "🛞 Freios", value: "freios" },
-        { label: "⚙ Transmissão", value: "transmissao" }
+        { label: "Motor", value: "motor" },
+        { label: "Visual", value: "visual" },
+        { label: "Interior", value: "interior" },
+        { label: "Freios", value: "freios" },
+        { label: "Transmissão", value: "transmissao" }
       )
   );
 }
 
 // ================= BOTÕES =================
-function botoes() {
+function buttons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("full")
@@ -113,8 +135,8 @@ function botoes() {
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
-      .setCustomId("back")
-      .setLabel("⬅ VOLTAR")
+      .setCustomId("home")
+      .setLabel("🏠 HOME")
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
@@ -135,7 +157,7 @@ client.once("ready", async () => {
   await registerCommands();
 });
 
-// ================= INTERAÇÃO =================
+// ================= INTERAÇÕES =================
 client.on("interactionCreate", async interaction => {
 
   // ================= ABRIR =================
@@ -145,13 +167,12 @@ client.on("interactionCreate", async interaction => {
 
       sessions.set(interaction.user.id, {
         userId: interaction.user.id,
-        items: [],
-        page: "home"
+        items: []
       });
 
       return interaction.reply({
-        content: "🚗 **OFICINA RP PREMIUM ABERTA**",
-        components: [painel(), botoes()],
+        embeds: [homePanel({ items: [] })],
+        components: [menuPanel(), buttons()],
         ephemeral: true
       });
     }
@@ -173,15 +194,13 @@ client.on("interactionCreate", async interaction => {
     const select = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId("item")
-        .setPlaceholder("🔧 Escolha a peça")
+        .setPlaceholder("🔧 Escolha peça")
         .addOptions(options)
     );
 
-    session.page = cat;
-
     return interaction.update({
-      content: `🔧 Categoria: **${cat.toUpperCase()}**`,
-      components: [select, botoes()]
+      embeds: [homePanel(session)],
+      components: [select, buttons()]
     });
   }
 
@@ -199,15 +218,13 @@ client.on("interactionCreate", async interaction => {
       price: getPrice(cat, item)
     });
 
-    const total = session.items.reduce((a, b) => a + b.price, 0);
-
     return interaction.reply({
-      content: `✔ Adicionado: **${cat} ${item}**\n💰 Total: R$ ${total}`,
+      content: `✔ Adicionado: **${cat} ${item}**`,
       ephemeral: true
     });
   }
 
-  // ================= FULL TUNING (BASE + LIBERADO) =================
+  // ================= FULL TUNING =================
   if (interaction.customId === "full") {
 
     const session = sessions.get(interaction.user.id);
@@ -215,27 +232,21 @@ client.on("interactionCreate", async interaction => {
 
     session.items.push(...FULL_TUNING);
 
-    const total = session.items.reduce((a, b) => a + b.price, 0);
-
     return interaction.update({
-      content:
-        `💎 FULL TUNING ATIVADO\n` +
-        `✔ Base instalada\n` +
-        `➕ Você ainda pode adicionar peças\n` +
-        `💰 Total: R$ ${total}`,
-      components: [painel(), botoes()]
+      embeds: [homePanel(session)],
+      components: [menuPanel(), buttons()]
     });
   }
 
-  // ================= VOLTAR =================
-  if (interaction.customId === "back") {
+  // ================= HOME =================
+  if (interaction.customId === "home") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
 
     return interaction.update({
-      content: "🚗 **PAINEL PRINCIPAL**",
-      components: [painel(), botoes()]
+      embeds: [homePanel(session)],
+      components: [menuPanel(), buttons()]
     });
   }
 
@@ -248,8 +259,8 @@ client.on("interactionCreate", async interaction => {
     session.items = [];
 
     return interaction.update({
-      content: "🧹 Carrinho limpo!",
-      components: [painel(), botoes()]
+      embeds: [homePanel(session)],
+      components: [menuPanel(), buttons()]
     });
   }
 
@@ -268,7 +279,7 @@ client.on("interactionCreate", async interaction => {
 
     const embed = new EmbedBuilder()
       .setTitle("🚗 SERVIÇO FINALIZADO")
-      .setColor(0x00ff00)
+      .setColor(0x00ff99)
       .setDescription(
         session.items.map(i =>
           `• ${i.cat} ${i.item} → R$ ${i.price}`
