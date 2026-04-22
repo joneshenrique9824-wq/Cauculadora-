@@ -21,11 +21,12 @@ const client = new Client({
 const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
-// ================= CARRINHO =================
-const carrinho = new Map();
+// ================= SESSÕES =================
+const sessions = new Map();
 
-// ================= PREÇOS (FULL TUNING) =================
+// ================= PREÇOS =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
@@ -33,8 +34,6 @@ const itens = {
   blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
   motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
   turbo: { "1": 60000 },
-  hidraulica: { padrao: 40000 },
-
   visual: {
     xenon: 40000,
     neon: 30000,
@@ -43,14 +42,12 @@ const itens = {
     spoiler: 20000,
     escapamento: 10000
   },
-
   interior: {
     banco: 30000,
     volante: 35000,
     som: 30000,
     painel: 20000
   },
-
   vidros: {
     fume100: 40000,
     fume70: 40000,
@@ -58,11 +55,15 @@ const itens = {
   }
 };
 
-// ================= COMANDO =================
+// ================= COMANDOS =================
 const commands = [
   new SlashCommandBuilder()
     .setName("tuning")
-    .setDescription("🚗 Painel Premium Bella Motors")
+    .setDescription("🚗 Painel Premium Bella Motors"),
+
+  new SlashCommandBuilder()
+    .setName("oficina")
+    .setDescription("🔧 Oficina Bella Motors")
 ].map(c => c.toJSON());
 
 // ================= REGISTRAR =================
@@ -77,16 +78,16 @@ async function registerCommands() {
   console.log("✅ Comandos registrados!");
 }
 
-// ================= CALCULAR =================
+// ================= HELPERS =================
 function getPrice(cat, item) {
   return itens[cat]?.[item] || 0;
 }
 
-// ================= MENU =================
-function menu() {
+// ================= MENUS =================
+function menuPrincipal() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId("menu")
+      .setCustomId("menu_cat")
       .setPlaceholder("🚗 Escolha uma categoria")
       .addOptions(
         { label: "Freios", value: "freios" },
@@ -100,14 +101,39 @@ function menu() {
   );
 }
 
-// ================= BOTÃO FINAL =================
-function finalizar() {
+function botoes() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("final")
-      .setLabel("💰 FINALIZAR FULL TUNING")
+      .setCustomId("voltar")
+      .setLabel("⬅ Voltar")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("finalizar")
+      .setLabel("💰 Finalizar Full Tuning")
       .setStyle(ButtonStyle.Success)
   );
+}
+
+// ================= LOG =================
+async function sendLog(session) {
+  if (!LOG_CHANNEL_ID) return;
+
+  const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+  if (!channel) return;
+
+  const total = session.items.reduce((a, b) => a + b.price, 0);
+
+  const embed = new EmbedBuilder()
+    .setTitle("🚗 LOG FULL TUNING")
+    .setColor(0xff0000)
+    .addFields(
+      { name: "👤 Cliente", value: session.userId },
+      { name: "💰 Total", value: `R$ ${total}` },
+      { name: "📦 Itens", value: session.items.map(i => `${i.cat} ${i.item} - R$ ${i.price}`).join("\n") }
+    );
+
+  channel.send({ embeds: [embed] });
 }
 
 // ================= READY =================
@@ -116,97 +142,117 @@ client.once("ready", async () => {
   await registerCommands();
 });
 
-// ================= INTERAÇÃO =================
+// ================= INTERAÇÕES =================
 client.on("interactionCreate", async interaction => {
 
-  // OPEN PANEL
+  // ================= ABRIR =================
   if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "tuning") {
 
-      carrinho.set(interaction.user.id, []);
+    if (interaction.commandName === "tuning" || interaction.commandName === "oficina") {
+
+      sessions.set(interaction.user.id, {
+        userId: interaction.user.id,
+        items: []
+      });
 
       return interaction.reply({
-        content: "🚗 **PAINEL PREMIUM BELLA MOTORS ABERTO**",
-        components: [menu(), finalizar()],
+        content: "🚗 **PAINEL BELLA MOTORS ABERTO**",
+        components: [menuPrincipal(), botoes()],
         ephemeral: true
       });
     }
   }
 
-  // MENU
-  if (interaction.isStringSelectMenu()) {
+  // ================= MENU CATEGORIA =================
+  if (interaction.isStringSelectMenu() && interaction.customId === "menu_cat") {
 
-    if (interaction.customId === "menu") {
-      const cat = interaction.values[0];
+    const session = sessions.get(interaction.user.id);
+    if (!session) return;
 
-      const options = Object.keys(itens[cat]).map(k => ({
-        label: `${k} - R$ ${itens[cat][k]}`,
-        value: `${cat}|${k}`
-      }));
+    const cat = interaction.values[0];
 
-      const select = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId("item")
-          .setPlaceholder("Escolha o item")
-          .addOptions(options)
-      );
+    const options = Object.keys(itens[cat]).map(i => ({
+      label: `${i} - R$ ${itens[cat][i]}`,
+      value: `${cat}|${i}`
+    }));
 
-      return interaction.update({
-        content: `🔧 Categoria: **${cat.toUpperCase()}**`,
-        components: [select, finalizar()]
-      });
-    }
+    const menu = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("item")
+        .setPlaceholder("Escolha o item")
+        .addOptions(options)
+    );
 
-    if (interaction.customId === "item") {
-      const [cat, item] = interaction.values[0].split("|");
-
-      const cart = carrinho.get(interaction.user.id) || [];
-
-      cart.push({
-        cat,
-        item,
-        price: getPrice(cat, item)
-      });
-
-      carrinho.set(interaction.user.id, cart);
-
-      const total = cart.reduce((a, b) => a + b.price, 0);
-
-      return interaction.reply({
-        content: `✔ Adicionado: **${cat} ${item}**\n💰 Total parcial: R$ ${total}`,
-        ephemeral: true
-      });
-    }
+    return interaction.update({
+      content: `🔧 Categoria: **${cat.toUpperCase()}**`,
+      components: [menu, botoes()]
+    });
   }
 
-  // FINALIZAR
+  // ================= ITEM =================
+  if (interaction.isStringSelectMenu() && interaction.customId === "item") {
+
+    const session = sessions.get(interaction.user.id);
+    if (!session) return;
+
+    const [cat, item] = interaction.values[0].split("|");
+
+    session.items.push({
+      cat,
+      item,
+      price: getPrice(cat, item)
+    });
+
+    const total = session.items.reduce((a, b) => a + b.price, 0);
+
+    return interaction.reply({
+      content: `✔ Adicionado: **${cat} ${item}**\n💰 Total parcial: R$ ${total}`,
+      ephemeral: true
+    });
+  }
+
+  // ================= BOTÕES =================
   if (interaction.isButton()) {
-    if (interaction.customId === "final") {
 
-      const cart = carrinho.get(interaction.user.id) || [];
+    const session = sessions.get(interaction.user.id);
+    if (!session) return;
 
-      if (!cart.length) {
+    // VOLTAR
+    if (interaction.customId === "voltar") {
+      return interaction.update({
+        content: "🚗 Painel principal",
+        components: [menuPrincipal(), botoes()]
+      });
+    }
+
+    // FINALIZAR
+    if (interaction.customId === "finalizar") {
+
+      if (!session.items.length) {
         return interaction.reply({
           content: "❌ Nenhum item selecionado!",
           ephemeral: true
         });
       }
 
-      const total = cart.reduce((a, b) => a + b.price, 0);
+      const total = session.items.reduce((a, b) => a + b.price, 0);
 
       const embed = new EmbedBuilder()
-        .setTitle("🚗 FULL TUNING - BELLA MOTORS")
+        .setTitle("🚗 FULL TUNING COMPLETO")
         .setColor(0xff0000)
         .setDescription(
-          cart.map(i =>
+          session.items.map(i =>
             `• ${i.cat} ${i.item} → R$ ${i.price}`
           ).join("\n")
         )
         .addFields(
-          { name: "💰 TOTAL FINAL", value: `R$ ${total}` }
+          { name: "👤 Cliente", value: session.userId },
+          { name: "💰 Total Final", value: `R$ ${total}` }
         );
 
-      carrinho.delete(interaction.user.id);
+      await sendLog(session);
+
+      sessions.delete(interaction.user.id);
 
       return interaction.reply({
         embeds: [embed],
