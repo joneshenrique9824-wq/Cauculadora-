@@ -22,181 +22,188 @@ const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
 
-// ================= DEBUG =================
-console.log("🔐 TOKEN:", !!TOKEN);
-console.log("🆔 CLIENT_ID:", !!CLIENT_ID);
-console.log("🏠 GUILD_ID:", !!GUILD_ID);
-
 // ================= CARRINHO =================
 const carrinho = new Map();
 
-// ================= PREÇOS =================
+// ================= PREÇOS (FULL TUNING) =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
+  transmissao: { street: 10000, sport: 15000, race: 20000 },
+  suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
+  blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
   motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
   turbo: { "1": 60000 },
+  hidraulica: { padrao: 40000 },
+
   visual: {
     xenon: 40000,
     neon: 30000,
     rodas: 90000,
-    pintura: 10000,
+    pintura: 20000,
     spoiler: 20000,
     escapamento: 10000
+  },
+
+  interior: {
+    banco: 30000,
+    volante: 35000,
+    som: 30000,
+    painel: 20000
+  },
+
+  vidros: {
+    fume100: 40000,
+    fume70: 40000,
+    fume50: 40000
   }
 };
 
 // ================= COMANDO =================
 const commands = [
   new SlashCommandBuilder()
-    .setName("oficina")
-    .setDescription("🚗 Abrir oficina Bella Motors")
+    .setName("tuning")
+    .setDescription("🚗 Painel Premium Bella Motors")
 ].map(c => c.toJSON());
 
-// ================= REGISTRAR COMANDOS =================
+// ================= REGISTRAR =================
 async function registerCommands() {
-  try {
-    const rest = new REST({ version: "10" }).setToken(TOKEN);
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-    console.log("📡 Registrando comandos...");
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-
-    console.log("✅ Comandos registrados!");
-  } catch (err) {
-    console.log("❌ Erro comandos:", err);
-  }
+  console.log("✅ Comandos registrados!");
 }
 
-// ================= FUNÇÕES =================
+// ================= CALCULAR =================
 function getPrice(cat, item) {
   return itens[cat]?.[item] || 0;
 }
 
-// ================= MENUS =================
-function menuCategorias() {
+// ================= MENU =================
+function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId("categoria")
-      .setPlaceholder("🚗 Escolha a categoria")
+      .setCustomId("menu")
+      .setPlaceholder("🚗 Escolha uma categoria")
       .addOptions(
         { label: "Freios", value: "freios" },
         { label: "Motor", value: "motor" },
         { label: "Turbo", value: "turbo" },
-        { label: "Visual", value: "visual" }
+        { label: "Visual", value: "visual" },
+        { label: "Interior", value: "interior" },
+        { label: "Vidros", value: "vidros" },
+        { label: "Blindagem", value: "blindagem" }
       )
   );
 }
 
-function botaoFinalizar() {
+// ================= BOTÃO FINAL =================
+function finalizar() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("finalizar")
-      .setLabel("💰 Finalizar Orçamento")
+      .setCustomId("final")
+      .setLabel("💰 FINALIZAR FULL TUNING")
       .setStyle(ButtonStyle.Success)
   );
 }
 
 // ================= READY =================
 client.once("ready", async () => {
-  console.log(`🔥 Bot online como ${client.user.tag}`);
-
+  console.log(`🔥 Online como ${client.user.tag}`);
   await registerCommands();
 });
 
-// ================= INTERAÇÕES =================
+// ================= INTERAÇÃO =================
 client.on("interactionCreate", async interaction => {
 
-  // ================= COMANDO =================
+  // OPEN PANEL
   if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "oficina") {
+    if (interaction.commandName === "tuning") {
 
       carrinho.set(interaction.user.id, []);
 
       return interaction.reply({
-        content: "🚗 **Oficina Bella Motors aberta! Escolha as peças abaixo:**",
-        components: [menuCategorias(), botaoFinalizar()],
+        content: "🚗 **PAINEL PREMIUM BELLA MOTORS ABERTO**",
+        components: [menu(), finalizar()],
         ephemeral: true
       });
     }
   }
 
-  // ================= MENU =================
+  // MENU
   if (interaction.isStringSelectMenu()) {
 
-    // categoria
-    if (interaction.customId === "categoria") {
+    if (interaction.customId === "menu") {
       const cat = interaction.values[0];
 
-      const options = Object.keys(itens[cat]).map(key => ({
-        label: `${key} - R$ ${itens[cat][key]}`,
-        value: `${cat}|${key}`
+      const options = Object.keys(itens[cat]).map(k => ({
+        label: `${k} - R$ ${itens[cat][k]}`,
+        value: `${cat}|${k}`
       }));
 
-      const menu = new ActionRowBuilder().addComponents(
+      const select = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId("item")
-          .setPlaceholder("Escolha a peça")
+          .setPlaceholder("Escolha o item")
           .addOptions(options)
       );
 
       return interaction.update({
-        content: `🔧 Categoria: **${cat}**`,
-        components: [menu, botaoFinalizar()]
+        content: `🔧 Categoria: **${cat.toUpperCase()}**`,
+        components: [select, finalizar()]
       });
     }
 
-    // item
     if (interaction.customId === "item") {
       const [cat, item] = interaction.values[0].split("|");
 
-      const userCart = carrinho.get(interaction.user.id) || [];
+      const cart = carrinho.get(interaction.user.id) || [];
 
-      userCart.push({
+      cart.push({
         cat,
         item,
         price: getPrice(cat, item)
       });
 
-      carrinho.set(interaction.user.id, userCart);
+      carrinho.set(interaction.user.id, cart);
 
-      const total = userCart.reduce((a, b) => a + b.price, 0);
+      const total = cart.reduce((a, b) => a + b.price, 0);
 
       return interaction.reply({
-        content: `✔ Adicionado: **${cat} ${item}**\n💰 Total: R$ ${total}`,
+        content: `✔ Adicionado: **${cat} ${item}**\n💰 Total parcial: R$ ${total}`,
         ephemeral: true
       });
     }
   }
 
-  // ================= BOTÃO FINALIZAR =================
+  // FINALIZAR
   if (interaction.isButton()) {
+    if (interaction.customId === "final") {
 
-    if (interaction.customId === "finalizar") {
+      const cart = carrinho.get(interaction.user.id) || [];
 
-      const userCart = carrinho.get(interaction.user.id) || [];
-
-      if (userCart.length === 0) {
+      if (!cart.length) {
         return interaction.reply({
-          content: "❌ Seu carrinho está vazio!",
+          content: "❌ Nenhum item selecionado!",
           ephemeral: true
         });
       }
 
-      const total = userCart.reduce((a, b) => a + b.price, 0);
+      const total = cart.reduce((a, b) => a + b.price, 0);
 
       const embed = new EmbedBuilder()
-        .setTitle("🚗 Orçamento Bella Motors")
+        .setTitle("🚗 FULL TUNING - BELLA MOTORS")
         .setColor(0xff0000)
         .setDescription(
-          userCart
-            .map(i => `• ${i.cat} ${i.item} - R$ ${i.price}`)
-            .join("\n")
+          cart.map(i =>
+            `• ${i.cat} ${i.item} → R$ ${i.price}`
+          ).join("\n")
         )
         .addFields(
-          { name: "💰 Total final", value: `R$ ${total}` }
+          { name: "💰 TOTAL FINAL", value: `R$ ${total}` }
         );
 
       carrinho.delete(interaction.user.id);
@@ -210,8 +217,4 @@ client.on("interactionCreate", async interaction => {
 });
 
 // ================= LOGIN =================
-if (!TOKEN) {
-  console.log("❌ TOKEN NÃO DEFINIDO");
-} else {
-  client.login(TOKEN);
-}
+client.login(TOKEN);
