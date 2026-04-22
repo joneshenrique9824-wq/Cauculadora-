@@ -23,9 +23,8 @@ const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
-// ================= SISTEMA =================
+// ================= SESSÕES =================
 const sessions = new Map();
-const prontuarios = new Map();
 
 // ================= FULL TUNING =================
 const FULL_TUNING = [
@@ -65,11 +64,16 @@ const itens = {
   }
 };
 
+// ================= HELPERS =================
+function getPrice(cat, item) {
+  return itens[cat]?.[item] || 0;
+}
+
 // ================= COMANDOS =================
 const commands = [
   new SlashCommandBuilder()
     .setName("tuning")
-    .setDescription("🚗 Abrir oficina RP")
+    .setDescription("🚗 Oficina RP Premium")
 ].map(c => c.toJSON());
 
 // ================= REGISTRO =================
@@ -84,50 +88,43 @@ async function registerCommands() {
   console.log("✅ Comandos registrados!");
 }
 
-// ================= HELPERS =================
-function getPrice(cat, item) {
-  return itens[cat]?.[item] || 0;
-}
-
-function getProntuario(userId) {
-  if (!prontuarios.has(userId)) {
-    prontuarios.set(userId, []);
-  }
-  return prontuarios.get(userId);
-}
-
-// ================= MENUS =================
-function menu() {
+// ================= PAINEL =================
+function painel() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId("menu_cat")
-      .setPlaceholder("🚗 Escolha uma categoria")
+      .setCustomId("menu")
+      .setPlaceholder("🚗 Abrir Oficina Premium")
       .addOptions(
-        { label: "Freios", value: "freios" },
-        { label: "Motor", value: "motor" },
-        { label: "Turbo", value: "turbo" },
-        { label: "Visual", value: "visual" },
-        { label: "Interior", value: "interior" },
-        { label: "Vidros", value: "vidros" }
+        { label: "🔧 Motor", value: "motor" },
+        { label: "🎨 Visual", value: "visual" },
+        { label: "🪑 Interior", value: "interior" },
+        { label: "🛞 Freios", value: "freios" },
+        { label: "⚙ Transmissão", value: "transmissao" }
       )
   );
 }
 
+// ================= BOTÕES =================
 function botoes() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("full_tuning")
+      .setCustomId("full")
       .setLabel("💎 FULL TUNING")
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
-      .setCustomId("limpar")
+      .setCustomId("back")
+      .setLabel("⬅ VOLTAR")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("clear")
       .setLabel("🧹 LIMPAR")
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
-      .setCustomId("finalizar")
-      .setLabel("💰 FINALIZAR SERVIÇO")
+      .setCustomId("finish")
+      .setLabel("💰 FINALIZAR")
       .setStyle(ButtonStyle.Success)
   );
 }
@@ -138,7 +135,7 @@ client.once("ready", async () => {
   await registerCommands();
 });
 
-// ================= INTERAÇÕES =================
+// ================= INTERAÇÃO =================
 client.on("interactionCreate", async interaction => {
 
   // ================= ABRIR =================
@@ -148,19 +145,20 @@ client.on("interactionCreate", async interaction => {
 
       sessions.set(interaction.user.id, {
         userId: interaction.user.id,
-        items: []
+        items: [],
+        page: "home"
       });
 
       return interaction.reply({
-        content: "🚗 **OFICINA RP ABERTA**",
-        components: [menu(), botoes()],
+        content: "🚗 **OFICINA RP PREMIUM ABERTA**",
+        components: [painel(), botoes()],
         ephemeral: true
       });
     }
   }
 
   // ================= MENU =================
-  if (interaction.isStringSelectMenu() && interaction.customId === "menu_cat") {
+  if (interaction.isStringSelectMenu() && interaction.customId === "menu") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
@@ -175,9 +173,11 @@ client.on("interactionCreate", async interaction => {
     const select = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId("item")
-        .setPlaceholder("Escolha o item")
+        .setPlaceholder("🔧 Escolha a peça")
         .addOptions(options)
     );
+
+    session.page = cat;
 
     return interaction.update({
       content: `🔧 Categoria: **${cat.toUpperCase()}**`,
@@ -207,8 +207,8 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  // ================= FULL TUNING =================
-  if (interaction.customId === "full_tuning") {
+  // ================= FULL TUNING (BASE + LIBERADO) =================
+  if (interaction.customId === "full") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
@@ -218,13 +218,29 @@ client.on("interactionCreate", async interaction => {
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
     return interaction.update({
-      content: `💎 FULL TUNING ADICIONADO!\n💰 Total: R$ ${total}`,
-      components: [menu(), botoes()]
+      content:
+        `💎 FULL TUNING ATIVADO\n` +
+        `✔ Base instalada\n` +
+        `➕ Você ainda pode adicionar peças\n` +
+        `💰 Total: R$ ${total}`,
+      components: [painel(), botoes()]
+    });
+  }
+
+  // ================= VOLTAR =================
+  if (interaction.customId === "back") {
+
+    const session = sessions.get(interaction.user.id);
+    if (!session) return;
+
+    return interaction.update({
+      content: "🚗 **PAINEL PRINCIPAL**",
+      components: [painel(), botoes()]
     });
   }
 
   // ================= LIMPAR =================
-  if (interaction.customId === "limpar") {
+  if (interaction.customId === "clear") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
@@ -233,71 +249,34 @@ client.on("interactionCreate", async interaction => {
 
     return interaction.update({
       content: "🧹 Carrinho limpo!",
-      components: [menu(), botoes()]
+      components: [painel(), botoes()]
     });
   }
 
-  // ================= FINALIZAR (PRONTUÁRIO + MECÂNICO) =================
-  if (interaction.customId === "finalizar") {
+  // ================= FINALIZAR =================
+  if (interaction.customId === "finish") {
 
     const session = sessions.get(interaction.user.id);
     if (!session || !session.items.length) {
       return interaction.reply({
-        content: "❌ Nenhum serviço selecionado!",
+        content: "❌ Nenhum item selecionado!",
         ephemeral: true
       });
     }
 
-    const mecanico = {
-      nome: interaction.user.username,
-      id: interaction.user.id
-    };
-
     const total = session.items.reduce((a, b) => a + b.price, 0);
 
-    // ================= PRONTUÁRIO =================
-    const prontuario = getProntuario(session.userId);
-
-    const registro = {
-      clienteId: session.userId,
-      mecanicoNome: mecanico.nome,
-      mecanicoId: mecanico.id,
-      itens: session.items,
-      total,
-      data: new Date().toLocaleString("pt-BR")
-    };
-
-    prontuario.push(registro);
-
-    // ================= EMBED CLIENTE =================
     const embed = new EmbedBuilder()
       .setTitle("🚗 SERVIÇO FINALIZADO")
       .setColor(0x00ff00)
+      .setDescription(
+        session.items.map(i =>
+          `• ${i.cat} ${i.item} → R$ ${i.price}`
+        ).join("\n")
+      )
       .addFields(
-        { name: "👤 Cliente ID", value: session.userId },
-        { name: "🔧 Mecânico", value: `${mecanico.nome} (${mecanico.id})` },
-        { name: "💰 Total", value: `R$ ${total}` },
-        {
-          name: "📦 Serviços",
-          value: session.items.map(i =>
-            `• ${i.cat} ${i.item} → R$ ${i.price}`
-          ).join("\n")
-        }
+        { name: "💰 TOTAL FINAL", value: `R$ ${total}` }
       );
-
-    // ================= LOG =================
-    const log = new EmbedBuilder()
-      .setTitle("🧾 NOVO PRONTUÁRIO GERADO")
-      .setColor(0xff0000)
-      .addFields(
-        { name: "👤 Cliente", value: session.userId },
-        { name: "🔧 Mecânico", value: `${mecanico.nome} (${mecanico.id})` },
-        { name: "💰 Total", value: `R$ ${total}` },
-        { name: "📅 Data", value: registro.data }
-      );
-
-    const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-    if (channel) channel.send({ embeds: [log] });
 
     sessions.delete(session.userId);
 
