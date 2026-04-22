@@ -20,15 +20,13 @@ const client = new Client({
 const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
-
 const EPHEMERAL = 1 << 6;
 
-// ================= DATABASE =================
+// ================= DB =================
 const db = { services: [] };
 
 // ================= SESSION =================
 const sessions = new Map();
-
 function session(id) {
   if (!sessions.has(id)) {
     sessions.set(id, { id, items: [], full: false });
@@ -36,7 +34,7 @@ function session(id) {
   return sessions.get(id);
 }
 
-// ================= SHOP (MERGE COMPLETO) =================
+// ================= SHOP =================
 const shop = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
@@ -45,7 +43,6 @@ const shop = {
   turbo: { "1": 60000 },
   hidraulica: { padrao: 40000 },
 
-  // 🔥 NOVOS (DO OUTRO BOT)
   blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
   visual: {
     xenon: 40000,
@@ -68,6 +65,8 @@ const shop = {
   }
 };
 
+const price = (c, i) => shop[c]?.[i] || 0;
+
 // ================= FULL KIT =================
 const FULL_KIT = [
   { cat: "freios", item: "race", price: 20000 },
@@ -78,35 +77,33 @@ const FULL_KIT = [
   { cat: "hidraulica", item: "padrao", price: 40000 }
 ];
 
-// ================= HELPERS =================
-const price = (c, i) => shop[c]?.[i] || 0;
-
+// ================= UTILS =================
 function generateId() {
   return `OS-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 }
 
-// ================= UI =================
 function formatItems(items) {
-  if (!items.length) return "Nenhum item";
-
+  if (!items.length) return "Nenhum item selecionado";
   return items.map(i =>
     `🔧 ${i.cat.toUpperCase()} • ${i.item} — R$ ${i.price}`
   ).join("\n");
 }
 
+// ================= HOME =================
 function home(s) {
   const total = s.items.reduce((a, b) => a + b.price, 0);
 
   return new EmbedBuilder()
-    .setTitle("🚗 OVER SPEED • GARAGEM PREMIUM")
+    .setTitle("🚗 OVER SPEED • GARAGEM")
     .setColor(0x00ffcc)
-    .setDescription("Sistema avançado de tuning RP")
+    .setDescription("Sistema profissional de tuning RP")
     .addFields(
       { name: "📦 ITENS", value: formatItems(s.items) },
       { name: "💰 TOTAL", value: `R$ ${total}`, inline: true },
       { name: "💎 FULL KIT", value: s.full ? "ON 🟢" : "OFF 🔴", inline: true }
     )
-    .setFooter({ text: "OVER SPEED SYSTEM" });
+    .setFooter({ text: "OVER SPEED SYSTEM" })
+    .setTimestamp();
 }
 
 // ================= MENU =================
@@ -114,7 +111,7 @@ function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("Escolher categoria")
+      .setPlaceholder("Selecionar categoria")
       .addOptions(
         { label: "Motor", value: "motor" },
         { label: "Freios", value: "freios" },
@@ -122,8 +119,6 @@ function menu() {
         { label: "Suspensão", value: "suspensao" },
         { label: "Turbo", value: "turbo" },
         { label: "Hidráulica", value: "hidraulica" },
-
-        // 🔥 NOVAS
         { label: "Blindagem", value: "blindagem" },
         { label: "Visual", value: "visual" },
         { label: "Interior", value: "interior" },
@@ -145,13 +140,12 @@ function buttons() {
 // ================= COMMANDS =================
 const commands = [
   new SlashCommandBuilder().setName("oficina").setDescription("Abrir OVER SPEED"),
-  new SlashCommandBuilder().setName("prontuario").setDescription("Histórico")
+  new SlashCommandBuilder().setName("prontuario").setDescription("Histórico de serviços")
 ].map(c => c.toJSON());
 
 // ================= REGISTER =================
 async function register() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
-
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
@@ -160,7 +154,7 @@ async function register() {
 
 // ================= READY =================
 client.once("clientReady", async () => {
-  console.log(`🚗 OVER SPEED ONLINE`);
+  console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
   await register();
 });
 
@@ -169,6 +163,7 @@ client.on("interactionCreate", async (i) => {
 
   const s = session(i.user.id);
 
+  // OPEN
   if (i.isChatInputCommand() && i.commandName === "oficina") {
     return i.reply({
       embeds: [home(s)],
@@ -176,26 +171,37 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // PRONTUARIO
   if (i.isChatInputCommand() && i.commandName === "prontuario") {
 
-    if (!db.services.length)
-      return i.reply({ content: "Sem serviços", flags: EPHEMERAL });
+    if (!db.services.length) {
+      return i.reply({
+        content: "❌ Nenhum serviço registrado.",
+        flags: EPHEMERAL
+      });
+    }
 
     const last = db.services.slice(-5).reverse();
 
     const embeds = last.map(sv =>
       new EmbedBuilder()
-        .setTitle(`📒 ${sv.id}`)
-        .addFields(
-          { name: "👤 Cliente", value: sv.client },
-          { name: "💰 Total", value: `R$ ${sv.total}` }
+        .setTitle(`📒 SERVIÇO ${sv.id}`)
+        .setColor(0x111111)
+        .setDescription(
+          `👨‍🔧 Mecânico: ${sv.mechanicName}\n` +
+          `🪪 ID: ${sv.mechanicId}\n\n` +
+          `🔧 Peças:\n${sv.items}\n\n` +
+          `💰 Total: R$ ${sv.total}\n` +
+          `📅 ${sv.date}`
         )
     );
 
     return i.reply({ embeds, flags: EPHEMERAL });
   }
 
+  // MENU
   if (i.isStringSelectMenu() && i.customId === "menu") {
+
     const cat = i.values[0];
 
     const options = Object.keys(shop[cat]).map(x => ({
@@ -216,7 +222,9 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // ITEM
   if (i.isStringSelectMenu() && i.customId === "item") {
+
     const [cat, item] = i.values[0].split("|");
 
     s.items.push({ cat, item, price: price(cat, item) });
@@ -227,6 +235,7 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // BACK
   if (i.customId === "back") {
     return i.update({
       embeds: [home(s)],
@@ -234,6 +243,7 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // FULL
   if (i.customId === "full") {
 
     const keys = new Set(FULL_KIT.map(x => `${x.cat}|${x.item}`));
@@ -252,6 +262,7 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // CLEAR
   if (i.customId === "clear") {
     s.items = [];
     s.full = false;
@@ -262,25 +273,55 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
+  // FINISH
   if (i.customId === "finish") {
+
+    if (!s.items.length) {
+      return i.reply({
+        content: "❌ Nenhuma modificação aplicada!",
+        flags: EPHEMERAL
+      });
+    }
 
     const total = s.items.reduce((a, b) => a + b.price, 0);
     const id = generateId();
 
+    const mechanicName = i.user.username;
+    const mechanicId = i.user.id;
+
+    const itemsText = formatItems(s.items);
+    const date = new Date().toLocaleString("pt-BR");
+
     db.services.push({
       id,
-      client: i.user.username,
-      total
+      mechanicName,
+      mechanicId,
+      items: itemsText,
+      total,
+      date
     });
+
+    const embed = new EmbedBuilder()
+      .setTitle("📒 ORDEM DE SERVIÇO FINALIZADA")
+      .setColor(0x00ffcc)
+      .setDescription(
+        `🆔 ${id}\n` +
+        `👨‍🔧 ${mechanicName}\n` +
+        `🪪 ${mechanicId}\n\n` +
+        `${itemsText}\n\n` +
+        `💰 R$ ${total}\n` +
+        `📅 ${date}`
+      );
 
     s.items = [];
     s.full = false;
 
     return i.reply({
-      content: `🚗 Finalizado\n🆔 ${id}\n💰 R$ ${total}`,
+      embeds: [embed],
       flags: EPHEMERAL
     });
   }
+
 });
 
 client.login(TOKEN);
