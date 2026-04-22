@@ -51,7 +51,7 @@ function getPrice(cat, item) {
   return itens[cat]?.[item] || 0;
 }
 
-// ================= REGISTRO DE LOG =================
+// ================= LOG =================
 function addLog(session, interaction, total) {
   const log = {
     clienteId: session.userId,
@@ -67,49 +67,7 @@ function addLog(session, interaction, total) {
   return log;
 }
 
-// ================= EMBED LOG =================
-function logEmbed(log) {
-  return new EmbedBuilder()
-    .setTitle("📒 OVER SPEED • PRONTUÁRIO")
-    .setColor(0x1f1f1f)
-    .setDescription(
-      log.itens.map(i =>
-        `• ${i.cat} ${i.item} → R$ ${i.price}`
-      ).join("\n")
-    )
-    .addFields(
-      { name: "👤 Cliente", value: `${log.clienteNome} (${log.clienteId})` },
-      { name: "🔧 Mecânico", value: `${log.mecanicoNome} (${log.mecanicoId})` },
-      { name: "💰 Total", value: `R$ ${log.total}` },
-      { name: "📅 Data", value: log.data }
-    )
-    .setFooter({ text: "OVER SPEED • Sistema de Oficina RP" });
-}
-
-// ================= COMANDOS =================
-const commands = [
-  new SlashCommandBuilder()
-    .setName("oficina")
-    .setDescription("🚗 OVER SPEED Oficina RP"),
-
-  new SlashCommandBuilder()
-    .setName("prontuario")
-    .setDescription("📒 Ver histórico de serviços")
-].map(c => c.toJSON());
-
-// ================= REGISTRO =================
-async function registerCommands() {
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
-
-  console.log("🚗 OVER SPEED ONLINE");
-}
-
-// ================= PAINEL =================
+// ================= PAINEL PRINCIPAL =================
 function painel(session) {
 
   const total = session.items.reduce((a, b) => a + b.price, 0);
@@ -118,10 +76,10 @@ function painel(session) {
     .setTitle("🚗 OVER SPEED")
     .setColor(0x111111)
     .setDescription(
-      "🔧 Oficina Mecânica RP Premium\n\n" +
-      "💎 FULL TUNING + personalização completa\n" +
-      "⚙ Sistema automático de cálculo\n\n" +
-      "🚗 LS Customs RP System"
+      "🔧 **LS CUSTOMS • OFICINA RP PREMIUM**\n\n" +
+      "💎 Sistema profissional de customização automotiva\n" +
+      "⚙ Full tuning + peças individuais\n\n" +
+      "🔥 Performance, estilo e precisão mecânica"
     )
     .addFields(
       {
@@ -133,9 +91,13 @@ function painel(session) {
       {
         name: "💰 Total",
         value: `R$ ${total}`
+      },
+      {
+        name: "💎 FULL TUNING",
+        value: session.fullActive ? "🟢 ATIVADO" : "🔴 DESATIVADO"
       }
     )
-    .setFooter({ text: "OVER SPEED • RP Garage System" });
+    .setFooter({ text: "OVER SPEED • LS Customs RP" });
 }
 
 // ================= MENU =================
@@ -183,7 +145,6 @@ function buttons() {
 // ================= READY =================
 client.once("ready", async () => {
   console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
-  await registerCommands();
 });
 
 // ================= INTERAÇÕES =================
@@ -192,35 +153,17 @@ client.on("interactionCreate", async interaction => {
   // ================= ABRIR =================
   if (interaction.isChatInputCommand()) {
 
-    // OFICINA
     if (interaction.commandName === "oficina") {
 
       sessions.set(interaction.user.id, {
         userId: interaction.user.id,
-        items: []
+        items: [],
+        fullActive: false
       });
 
       return interaction.reply({
-        embeds: [painel({ items: [] })],
+        embeds: [painel({ items: [], fullActive: false })],
         components: [menu(), buttons()],
-        ephemeral: true
-      });
-    }
-
-    // PRONTUÁRIO
-    if (interaction.commandName === "prontuario") {
-
-      if (!logs.length) {
-        return interaction.reply({
-          content: "❌ Nenhum serviço registrado ainda!",
-          ephemeral: true
-        });
-      }
-
-      const last = logs.slice(-5).reverse();
-
-      return interaction.reply({
-        embeds: last.map(log => logEmbed(log)),
         ephemeral: true
       });
     }
@@ -272,13 +215,21 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  // ================= FULL TUNING =================
+  // ================= FULL TUNING TOGGLE =================
   if (interaction.customId === "full") {
 
     const session = sessions.get(interaction.user.id);
     if (!session) return;
 
-    session.items.push(...FULL_TUNING);
+    if (!session.fullActive) {
+      session.items.push(...FULL_TUNING);
+      session.fullActive = true;
+    } else {
+      session.items = session.items.filter(i =>
+        !FULL_TUNING.some(f => f.cat === i.cat && f.item === i.item)
+      );
+      session.fullActive = false;
+    }
 
     return interaction.update({
       embeds: [painel(session)],
@@ -293,6 +244,7 @@ client.on("interactionCreate", async interaction => {
     if (!session) return;
 
     session.items = [];
+    session.fullActive = false;
 
     return interaction.update({
       embeds: [painel(session)],
@@ -300,19 +252,7 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  // ================= HOME =================
-  if (interaction.customId === "home") {
-
-    const session = sessions.get(interaction.user.id);
-    if (!session) return;
-
-    return interaction.update({
-      embeds: [painel(session)],
-      components: [menu(), buttons()]
-    });
-  }
-
-  // ================= FINALIZAR =================
+  // ================= FINALIZAR (PRONTUÁRIO + PAINEL FINAL) =================
   if (interaction.customId === "finish") {
 
     const session = sessions.get(interaction.user.id);
@@ -333,24 +273,27 @@ client.on("interactionCreate", async interaction => {
       id: interaction.user.id
     };
 
+    // RESET
     sessions.set(interaction.user.id, {
       userId: interaction.user.id,
-      items: []
+      items: [],
+      fullActive: false
     });
 
     return interaction.update({
       embeds: [
         new EmbedBuilder()
-          .setTitle("🚗 OVER SPEED")
-          .setColor(0x111111)
+          .setTitle("🚗 OVER SPEED • SERVIÇO FINALIZADO")
+          .setColor(0x00ff99)
           .setDescription(
-            "✔ Serviço finalizado com sucesso!\n\n" +
-            "📒 Prontuário registrado no sistema\n" +
-            "🔧 Oficina pronta para novo serviço"
+            "📒 **PRONTUÁRIO REGISTRADO COM SUCESSO**\n\n" +
+            "🔧 Oficina finalizou o serviço do veículo\n" +
+            "🚗 Sistema pronto para novo atendimento"
           )
           .addFields(
-            { name: "💰 Total", value: `R$ ${total}` },
-            { name: "🔧 Mecânico", value: `${mecanico.nome} (${mecanico.id})` }
+            { name: "👤 Cliente", value: log.clienteNome },
+            { name: "🔧 Mecânico", value: `${mecanico.nome} (${mecanico.id})` },
+            { name: "💰 Total", value: `R$ ${total}` }
           )
       ],
       components: [menu(), buttons()]
