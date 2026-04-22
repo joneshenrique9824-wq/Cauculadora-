@@ -24,12 +24,49 @@ const GUILD_ID = process.env.GUILD_ID?.trim();
 const EPHEMERAL = 1 << 6;
 
 // ================= DATABASE =================
-const db = {
-  services: []
-};
+const db = { services: [] };
 
 // ================= SESSION =================
 const sessions = new Map();
+
+function session(id) {
+  if (!sessions.has(id)) {
+    sessions.set(id, { id, items: [], full: false });
+  }
+  return sessions.get(id);
+}
+
+// ================= SHOP (MERGE COMPLETO) =================
+const shop = {
+  freios: { street: 10000, sport: 15000, race: 20000 },
+  transmissao: { street: 10000, sport: 15000, race: 20000 },
+  suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
+  motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
+  turbo: { "1": 60000 },
+  hidraulica: { padrao: 40000 },
+
+  // 🔥 NOVOS (DO OUTRO BOT)
+  blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
+  visual: {
+    xenon: 40000,
+    neon: 30000,
+    rodas: 90000,
+    pintura: 20000,
+    spoiler: 20000,
+    escapamento: 10000
+  },
+  interior: {
+    banco: 30000,
+    volante: 35000,
+    som: 30000,
+    painel: 20000
+  },
+  vidros: {
+    fume100: 40000,
+    fume70: 40000,
+    fume50: 40000
+  }
+};
 
 // ================= FULL KIT =================
 const FULL_KIT = [
@@ -41,56 +78,35 @@ const FULL_KIT = [
   { cat: "hidraulica", item: "padrao", price: 40000 }
 ];
 
-// ================= SHOP =================
-const shop = {
-  freios: { street: 10000, sport: 15000, race: 20000 },
-  transmissao: { street: 10000, sport: 15000, race: 20000 },
-  suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
-  motor: { street: 10000, sport: 20000, top: 40000 },
-  turbo: { "1": 60000 },
-  hidraulica: { padrao: 40000 }
-};
-
-// ================= SESSION =================
-function session(id) {
-  if (!sessions.has(id)) {
-    sessions.set(id, {
-      id,
-      items: [],
-      full: false
-    });
-  }
-  return sessions.get(id);
-}
-
-// ================= PRICE =================
+// ================= HELPERS =================
 const price = (c, i) => shop[c]?.[i] || 0;
 
-// ================= SERVICE ID =================
 function generateId() {
   return `OS-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 }
 
-// ================= HOME =================
-function home(s) {
+// ================= UI =================
+function formatItems(items) {
+  if (!items.length) return "Nenhum item";
 
+  return items.map(i =>
+    `🔧 ${i.cat.toUpperCase()} • ${i.item} — R$ ${i.price}`
+  ).join("\n");
+}
+
+function home(s) {
   const total = s.items.reduce((a, b) => a + b.price, 0);
 
   return new EmbedBuilder()
-    .setTitle("🚗 OVER SPEED • GTA RP GARAGE")
-    .setColor(0x0b0b0b)
-    .setDescription(
-      "💎 Sistema de oficina automotiva RP\n\n" +
-      "🔧 Tuning completo de veículos\n" +
-      "⚙ Performance e upgrades profissionais\n\n" +
-      "📌 Selecione uma categoria abaixo"
-    )
+    .setTitle("🚗 OVER SPEED • GARAGEM PREMIUM")
+    .setColor(0x00ffcc)
+    .setDescription("Sistema avançado de tuning RP")
     .addFields(
-      { name: "📦 ITENS", value: `${s.items.length}`, inline: true },
+      { name: "📦 ITENS", value: formatItems(s.items) },
       { name: "💰 TOTAL", value: `R$ ${total}`, inline: true },
-      { name: "💎 FULL KIT", value: s.full ? "ATIVO 🟢" : "OFF 🔴", inline: true }
+      { name: "💎 FULL KIT", value: s.full ? "ON 🟢" : "OFF 🔴", inline: true }
     )
-    .setFooter({ text: "OVER SPEED SYSTEM RP" });
+    .setFooter({ text: "OVER SPEED SYSTEM" });
 }
 
 // ================= MENU =================
@@ -98,14 +114,20 @@ function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("🚗 Escolha categoria")
+      .setPlaceholder("Escolher categoria")
       .addOptions(
         { label: "Motor", value: "motor" },
         { label: "Freios", value: "freios" },
         { label: "Transmissão", value: "transmissao" },
         { label: "Suspensão", value: "suspensao" },
         { label: "Turbo", value: "turbo" },
-        { label: "Hidráulica", value: "hidraulica" }
+        { label: "Hidráulica", value: "hidraulica" },
+
+        // 🔥 NOVAS
+        { label: "Blindagem", value: "blindagem" },
+        { label: "Visual", value: "visual" },
+        { label: "Interior", value: "interior" },
+        { label: "Vidros", value: "vidros" }
       )
   );
 }
@@ -113,37 +135,17 @@ function menu() {
 // ================= BUTTONS =================
 function buttons() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("back")
-      .setLabel("⬅ VOLTAR")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("full")
-      .setLabel("💎 FULL KIT")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("clear")
-      .setLabel("🧹 LIMPAR")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("finish")
-      .setLabel("💰 FINALIZAR")
-      .setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId("back").setLabel("⬅ Voltar").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("full").setLabel("💎 Full Kit").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("clear").setLabel("🧹 Limpar").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("finish").setLabel("💰 Finalizar").setStyle(ButtonStyle.Success)
   );
 }
 
 // ================= COMMANDS =================
 const commands = [
-  new SlashCommandBuilder()
-    .setName("oficina")
-    .setDescription("🚗 Abrir OVER SPEED"),
-
-  new SlashCommandBuilder()
-    .setName("prontuario")
-    .setDescription("📒 Histórico de serviços")
+  new SlashCommandBuilder().setName("oficina").setDescription("Abrir OVER SPEED"),
+  new SlashCommandBuilder().setName("prontuario").setDescription("Histórico")
 ].map(c => c.toJSON());
 
 // ================= REGISTER =================
@@ -158,7 +160,7 @@ async function register() {
 
 // ================= READY =================
 client.once("clientReady", async () => {
-  console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
+  console.log(`🚗 OVER SPEED ONLINE`);
   await register();
 });
 
@@ -167,44 +169,33 @@ client.on("interactionCreate", async (i) => {
 
   const s = session(i.user.id);
 
-  // ================= OPEN =================
   if (i.isChatInputCommand() && i.commandName === "oficina") {
-
     return i.reply({
       embeds: [home(s)],
-      components: [menu()],
-      flags: EPHEMERAL
+      components: [menu()]
     });
   }
 
-  // ================= PRONTUÁRIO =================
   if (i.isChatInputCommand() && i.commandName === "prontuario") {
 
-    if (db.services.length === 0) {
-      return i.reply({ content: "❌ Nenhum serviço encontrado", flags: EPHEMERAL });
-    }
+    if (!db.services.length)
+      return i.reply({ content: "Sem serviços", flags: EPHEMERAL });
 
     const last = db.services.slice(-5).reverse();
 
     const embeds = last.map(sv =>
       new EmbedBuilder()
-        .setTitle(`📒 SERVIÇO ${sv.id}`)
-        .setColor(0x222222)
+        .setTitle(`📒 ${sv.id}`)
         .addFields(
           { name: "👤 Cliente", value: sv.client },
-          { name: "🔧 Mecânico", value: sv.mechanic },
-          { name: "💰 Total", value: `R$ ${sv.total}` },
-          { name: "📦 Itens", value: sv.items.map(x => `${x.cat} ${x.item}`).join("\n") },
-          { name: "📅 Data", value: sv.date }
+          { name: "💰 Total", value: `R$ ${sv.total}` }
         )
     );
 
     return i.reply({ embeds, flags: EPHEMERAL });
   }
 
-  // ================= MENU =================
   if (i.isStringSelectMenu() && i.customId === "menu") {
-
     const cat = i.values[0];
 
     const options = Object.keys(shop[cat]).map(x => ({
@@ -213,16 +204,11 @@ client.on("interactionCreate", async (i) => {
     }));
 
     return i.update({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle(`🔧 OVER SPEED • ${cat.toUpperCase()}`)
-          .setColor(0x111111)
-      ],
+      embeds: [new EmbedBuilder().setTitle(`🔧 ${cat.toUpperCase()}`)],
       components: [
         new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId("item")
-            .setPlaceholder("Selecionar item")
             .addOptions(options)
         ),
         buttons()
@@ -230,26 +216,24 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
-  // ================= ITEM =================
   if (i.isStringSelectMenu() && i.customId === "item") {
-
     const [cat, item] = i.values[0].split("|");
 
     s.items.push({ cat, item, price: price(cat, item) });
 
-    return i.reply({ content: "✔ Modificação aplicada", flags: EPHEMERAL });
+    return i.update({
+      embeds: [home(s)],
+      components: [menu(), buttons()]
+    });
   }
 
-  // ================= BACK =================
   if (i.customId === "back") {
-
     return i.update({
       embeds: [home(s)],
       components: [menu()]
     });
   }
 
-  // ================= FULL KIT =================
   if (i.customId === "full") {
 
     const keys = new Set(FULL_KIT.map(x => `${x.cat}|${x.item}`));
@@ -268,9 +252,7 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
-  // ================= CLEAR =================
   if (i.customId === "clear") {
-
     s.items = [];
     s.full = false;
 
@@ -280,34 +262,25 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
-  // ================= FINISH =================
   if (i.customId === "finish") {
 
     const total = s.items.reduce((a, b) => a + b.price, 0);
-
     const id = generateId();
 
     db.services.push({
       id,
       client: i.user.username,
-      mechanic: i.user.username,
-      items: s.items,
-      total,
-      date: new Date().toLocaleString("pt-BR")
+      total
     });
 
     s.items = [];
     s.full = false;
 
     return i.reply({
-      content:
-        `🚗 SERVIÇO FINALIZADO\n` +
-        `🆔 ID: ${id}\n` +
-        `💰 TOTAL: R$ ${total}`,
+      content: `🚗 Finalizado\n🆔 ${id}\n💰 R$ ${total}`,
       flags: EPHEMERAL
     });
   }
 });
 
-// ================= LOGIN =================
 client.login(TOKEN);
