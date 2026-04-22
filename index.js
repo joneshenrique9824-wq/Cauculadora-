@@ -5,16 +5,10 @@ import {
   EmbedBuilder,
   REST,
   Routes,
-  SlashCommandBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  SlashCommandBuilder
 } from "discord.js";
 
-// ================= CONFIG =================
+// ================= BOT =================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
@@ -23,12 +17,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
-  console.error("❌ Falta TOKEN, CLIENT_ID ou GUILD_ID no .env");
-  process.exit(1);
-}
-
-// ================= TABELA =================
+// ================= PREÇOS =================
 const itens = {
   freios: { street: 10000, sport: 15000, race: 20000 },
   transmissao: { street: 10000, sport: 15000, race: 20000 },
@@ -37,18 +26,86 @@ const itens = {
   motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
   turbo: { "1": 60000 },
   hidraulica: { padrao: 40000 },
-  visual: { rodas: 90000, neon: 30000, xenon: 40000 },
-  interior: { banco: 30000, volante: 35000, som: 30000 }
+
+  visual: {
+    buzina: 20000,
+    xenon: 40000,
+    neon: 30000,
+    rodas: 90000,
+    cor_rodas: 20000,
+    acess_rodas: 4000,
+    pintura_primaria: 10000,
+    pintura_secundaria: 10000,
+    fumaca: 30000,
+    placa: 10000,
+    spoiler: 20000,
+    parachoque_dian: 20000,
+    parachoque_tras: 20000,
+    paralama_dian: 15000,
+    paralama_tras: 15000,
+    saia: 15000,
+    chassis: 20000,
+    grade: 10000,
+    assento: 10000,
+    capo: 15000,
+    escapamento: 10000,
+    teto: 10000,
+    decal: 30000,
+    tanque: 20000,
+    design: 20000,
+    suporte: 30000,
+    filtro_ar: 20000,
+    bloco_motor: 20000,
+    capa_farol: 15000,
+    portas: 30000
+  },
+
+  interior: {
+    enfeites: 40000,
+    painel: 20000,
+    placa: 50000,
+    ponteiros: 20000,
+    banco: 30000,
+    design: 30000,
+    volante: 35000,
+    som: 30000,
+    porta_mala: 30000,
+    cambio: 35000,
+    janelas: 30000
+  },
+
+  vidros: {
+    fume100: 40000,
+    fume70: 40000,
+    fume50: 40000,
+    fume40: 40000,
+    fume30: 40000
+  }
 };
 
 // ================= COMANDO =================
 const commands = [
   new SlashCommandBuilder()
     .setName("calc")
-    .setDescription("Abrir calculadora Bella Motors")
+    .setDescription("Calculadora Bella Motors")
+    .addStringOption(opt =>
+      opt.setName("itens")
+        .setDescription("Ex: freios street, motor sport, turbo 1")
+        .setRequired(true)
+    )
+    .addIntegerOption(opt =>
+      opt.setName("desconto")
+        .setDescription("Desconto em %")
+        .setRequired(false)
+    )
+    .addStringOption(opt =>
+      opt.setName("id")
+        .setDescription("ID do Discord do cliente")
+        .setRequired(true)
+    )
 ].map(c => c.toJSON());
 
-// ================= REGISTRO =================
+// ================= REGISTRAR COMANDOS =================
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 async function registerCommands() {
@@ -59,11 +116,11 @@ async function registerCommands() {
     );
     console.log("✅ Comandos registrados!");
   } catch (err) {
-    console.error("❌ Erro ao registrar comandos:", err);
+    console.log("❌ Erro comandos:", err);
   }
 }
 
-// ================= PREÇO =================
+// ================= CALC =================
 function getPrice(cat, item) {
   if (!itens[cat]) return 0;
   return itens[cat][item] || 0;
@@ -75,122 +132,41 @@ client.once("ready", async () => {
   await registerCommands();
 });
 
-// ================= INTERAÇÕES =================
+// ================= INTERAÇÃO =================
 client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-  // ================= /calc abre modal =================
-  if (interaction.isChatInputCommand() && interaction.commandName === "calc") {
-
-    const modal = new ModalBuilder()
-      .setCustomId("calc_modal")
-      .setTitle("🚗 Bella Motors - Calculadora");
-
-    const itensInput = new TextInputBuilder()
-      .setCustomId("itens")
-      .setLabel("Itens (freios street, motor sport...)")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true);
-
-    const descontoInput = new TextInputBuilder()
-      .setCustomId("desconto")
-      .setLabel("Desconto % (opcional)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false);
-
-    const idInput = new TextInputBuilder()
-      .setCustomId("discordId")
-      .setLabel("ID do cliente")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(itensInput),
-      new ActionRowBuilder().addComponents(descontoInput),
-      new ActionRowBuilder().addComponents(idInput)
-    );
-
-    return interaction.showModal(modal);
-  }
-
-  // ================= PROCESSAR MODAL =================
-  if (interaction.isModalSubmit() && interaction.customId === "calc_modal") {
-
-    const raw = interaction.fields.getTextInputValue("itens");
-    const desconto = Number(interaction.fields.getTextInputValue("desconto")) || 0;
-    const discordId = interaction.fields.getTextInputValue("discordId");
+  if (interaction.commandName === "calc") {
+    const raw = interaction.options.getString("itens");
+    const desconto = interaction.options.getInteger("desconto") || 0;
+    const discordId = interaction.options.getString("id");
 
     let total = 0;
 
-    const list = raw.split(",");
+    const list = raw.toLowerCase().split(",");
 
     for (const item of list) {
-      const clean = item.trim().toLowerCase();
+      const parts = item.trim().split(" ");
+      const cat = parts[0];
+      const name = parts.slice(1).join(" ");
 
-      const spaceIndex = clean.indexOf(" ");
-      if (spaceIndex === -1) continue;
-
-      const cat = clean.slice(0, spaceIndex);
-      const name = clean.slice(spaceIndex + 1);
-
-      const price = getPrice(cat, name);
-
-      if (price) total += price;
+      total += getPrice(cat, name);
     }
 
     const final = total - (total * desconto / 100);
 
-    const format = (v) =>
-      new Intl.NumberFormat("pt-BR", {
-        style: "currency",
-        currency: "BRL"
-      }).format(v);
-
-    // ================= BOTÕES =================
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("confirmar")
-        .setLabel("✔ Confirmar")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId("cancelar")
-        .setLabel("❌ Cancelar")
-        .setStyle(ButtonStyle.Danger)
-    );
-
     const embed = new EmbedBuilder()
-      .setTitle("🚗 Bella Motors - Orçamento")
+      .setTitle("🚗 Bella Motors - Calculadora")
       .setColor(0xff0000)
       .addFields(
-        { name: "🆔 Cliente", value: discordId },
-        { name: "💸 Total", value: format(total), inline: true },
+        { name: "🆔 Cliente Discord", value: discordId, inline: false },
+        { name: "💸 Total", value: `R$ ${total.toLocaleString()}`, inline: true },
         { name: "📉 Desconto", value: `${desconto}%`, inline: true },
-        { name: "💰 Final", value: format(final), inline: false }
+        { name: "💰 Final", value: `R$ ${final.toLocaleString()}`, inline: false }
       )
-      .setFooter({ text: "Clique para confirmar ou cancelar" });
+      .setFooter({ text: "Bella Motors - Sistema automático" });
 
-    return interaction.reply({
-      embeds: [embed],
-      components: [row]
-    });
-  }
-
-  // ================= BOTÕES =================
-  if (interaction.isButton()) {
-
-    if (interaction.customId === "confirmar") {
-      return interaction.reply({
-        content: "✅ Orçamento confirmado com sucesso!",
-        ephemeral: true
-      });
-    }
-
-    if (interaction.customId === "cancelar") {
-      return interaction.reply({
-        content: "❌ Orçamento cancelado.",
-        ephemeral: true
-      });
-    }
+    await interaction.reply({ embeds: [embed] });
   }
 });
 
