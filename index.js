@@ -12,21 +12,22 @@ import {
   SlashCommandBuilder
 } from "discord.js";
 
-// ================= BOT =================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// ================= ENV =================
+// ================= CONFIG =================
 const TOKEN = process.env.TOKEN?.trim();
 const CLIENT_ID = process.env.CLIENT_ID?.trim();
 const GUILD_ID = process.env.GUILD_ID?.trim();
 
 const EPHEMERAL = 1 << 6;
 
-// ================= STORAGE =================
-const sessions = new Map();
-const logs = [];
+// ================= DATABASE SIMULADA =================
+const db = {
+  services: [],
+  users: new Map()
+};
 
 // ================= FULL KIT =================
 const FULL_KIT = [
@@ -48,75 +49,50 @@ const shop = {
   hidraulica: { padrao: 40000 }
 };
 
-// ================= COMMANDS =================
-const commands = [
-  new SlashCommandBuilder()
-    .setName("oficina")
-    .setDescription("🚗 Abrir OVER SPEED"),
+// ================= SESSION =================
+const sessions = new Map();
 
-  new SlashCommandBuilder()
-    .setName("prontuario")
-    .setDescription("📒 Ver histórico da oficina")
-].map(c => c.toJSON());
-
-// ================= REGISTER =================
-async function registerCommands() {
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
-
-  console.log("✅ Comandos registrados!");
-}
-
-// ================= HELPERS =================
-function getPrice(cat, item) {
-  return shop[cat]?.[item] || 0;
-}
-
-function getSession(id) {
+function session(id) {
   if (!sessions.has(id)) {
     sessions.set(id, {
-      userId: id,
+      id,
       items: [],
-      full: false
+      full: false,
+      page: "home"
     });
   }
   return sessions.get(id);
 }
 
-// ================= LOG =================
-function saveLog(session, user, total) {
-  logs.push({
-    cliente: user.username,
-    mecanico: user.username,
-    itens: session.items,
-    total,
-    data: new Date().toLocaleString("pt-BR")
-  });
+// ================= PRICE =================
+const price = (c, i) => shop[c]?.[i] || 0;
+
+// ================= SERVICE ID =================
+function generateServiceId() {
+  return `OS-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 }
 
-// ================= PAINEL =================
-function panel(session) {
+// ================= HOME PANEL =================
+function homePanel(s) {
 
-  const total = session.items.reduce((a, b) => a + b.price, 0);
+  const total = s.items.reduce((a, b) => a + b.price, 0);
 
   return new EmbedBuilder()
-    .setTitle("🚗 OVER SPEED • OFICINA AUTOMOTIVA")
-    .setColor(0x111111)
+    .setTitle("🚗 OVER SPEED • ENTERPRISE GARAGE")
+    .setColor(0x0a0a0a)
     .setDescription(
-      "💎 Sistema profissional de customização automotiva\n" +
-      "⚙ Controle total de performance e estética\n" +
-      "🚀 Interface rápida e otimizada 2026"
+      "💎 **SISTEMA ENTERPRISE DE OFICINA RP**\n\n" +
+      "🔧 Gerenciamento profissional de modificações\n" +
+      "⚙ Controle completo de performance veicular\n" +
+      "📊 Sistema de serviço com rastreio único\n\n" +
+      "🚀 Pronto para servidores RP grandes"
     )
     .addFields(
-      { name: "📦 Itens", value: `${session.items.length}`, inline: true },
-      { name: "💰 Total", value: `R$ ${total}`, inline: true },
-      { name: "💎 FULL", value: session.full ? "ON 🟢" : "OFF 🔴", inline: true }
+      { name: "📦 ITENS", value: `${s.items.length}`, inline: true },
+      { name: "💰 TOTAL", value: `R$ ${total}`, inline: true },
+      { name: "💎 FULL KIT", value: s.full ? "ATIVO 🟢" : "OFF 🔴", inline: true }
     )
-    .setFooter({ text: "OVER SPEED SYSTEM" });
+    .setFooter({ text: "OVER SPEED ENTERPRISE SYSTEM" });
 }
 
 // ================= MENU =================
@@ -124,7 +100,7 @@ function menu() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("menu")
-      .setPlaceholder("🔧 Categoria")
+      .setPlaceholder("🚗 Selecionar categoria")
       .addOptions(
         { label: "Motor", value: "motor" },
         { label: "Freios", value: "freios" },
@@ -141,149 +117,158 @@ function buttons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("full").setLabel("💎 FULL KIT").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("clear").setLabel("🧹 RESET").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("finish").setLabel("💰 FINALIZAR").setStyle(ButtonStyle.Success)
+    new ButtonBuilder().setCustomId("finish").setLabel("💰 FINALIZAR SERVIÇO").setStyle(ButtonStyle.Success)
+  );
+}
+
+// ================= REGISTER COMMANDS =================
+const commands = [
+  new SlashCommandBuilder().setName("oficina").setDescription("🚗 Abrir OVER SPEED"),
+  new SlashCommandBuilder().setName("prontuario").setDescription("📒 Histórico da oficina")
+].map(c => c.toJSON());
+
+async function register() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
   );
 }
 
 // ================= READY =================
 client.once("clientReady", async () => {
-  console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
-  await registerCommands();
+  console.log(`🚗 OVER SPEED ENTERPRISE ONLINE: ${client.user.tag}`);
+  await register();
 });
 
 // ================= INTERAÇÕES =================
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate", async (i) => {
 
-  const session = getSession(interaction.user.id);
+  const s = session(i.user.id);
 
-  // ================= OFICINA =================
-  if (interaction.isChatInputCommand() && interaction.commandName === "oficina") {
+  // ================= OPEN =================
+  if (i.isChatInputCommand() && i.commandName === "oficina") {
 
-    return interaction.reply({
-      embeds: [panel(session)],
-      components: [menu(), buttons()],
+    return i.reply({
+      embeds: [homePanel(s)],
+      components: [menu()],
       flags: EPHEMERAL
     });
   }
 
-  // ================= PRONTUÁRIO (FIX REAL) =================
-  if (interaction.isChatInputCommand() && interaction.commandName === "prontuario") {
+  // ================= PRONTUÁRIO ENTERPRISE =================
+  if (i.isChatInputCommand() && i.commandName === "prontuario") {
 
-    if (logs.length === 0) {
-      return interaction.reply({
-        content: "❌ Nenhum serviço registrado ainda",
-        flags: EPHEMERAL
-      });
+    if (db.services.length === 0) {
+      return i.reply({ content: "❌ Nenhum serviço registrado", flags: EPHEMERAL });
     }
 
-    const last = logs.slice(-5).reverse();
+    const last = db.services.slice(-5).reverse();
 
-    const embeds = last.map(l =>
+    const embeds = last.map(sv =>
       new EmbedBuilder()
-        .setTitle("📒 OVER SPEED • PRONTUÁRIO")
+        .setTitle(`📒 SERVIÇO ${sv.id}`)
         .setColor(0x222222)
-        .setDescription(
-          l.itens.map(i => `🔧 ${i.cat} ${i.item} → R$ ${i.price}`).join("\n")
-        )
         .addFields(
-          { name: "👤 Cliente", value: l.cliente },
-          { name: "🔧 Mecânico", value: l.mecanico },
-          { name: "💰 Total", value: `R$ ${l.total}` },
-          { name: "📅 Data", value: l.data }
+          { name: "👤 Cliente", value: sv.client },
+          { name: "🔧 Mecânico", value: sv.mechanic },
+          { name: "💰 Total", value: `R$ ${sv.total}` },
+          { name: "📦 Itens", value: sv.items.map(x => `${x.cat} ${x.item}`).join("\n") },
+          { name: "📅 Data", value: sv.date }
         )
     );
 
-    return interaction.reply({
-      embeds,
-      flags: EPHEMERAL
-    });
+    return i.reply({ embeds, flags: EPHEMERAL });
   }
 
   // ================= MENU =================
-  if (interaction.isStringSelectMenu() && interaction.customId === "menu") {
+  if (i.isStringSelectMenu() && i.customId === "menu") {
 
-    const cat = interaction.values[0];
+    const cat = i.values[0];
 
-    const options = Object.keys(shop[cat]).map(i => ({
-      label: `${i} - R$ ${shop[cat][i]}`,
-      value: `${cat}|${i}`
+    const options = Object.keys(shop[cat]).map(x => ({
+      label: `${x} - R$ ${shop[cat][x]}`,
+      value: `${cat}|${x}`
     }));
 
-    const select = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("item")
-        .setPlaceholder("Selecionar peça")
-        .addOptions(options)
-    );
-
-    return interaction.update({
-      embeds: [panel(session)],
-      components: [select, buttons()]
-    }).catch(() => {});
+    return i.update({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`🔧 CAT: ${cat.toUpperCase()}`)
+          .setColor(0x111111)
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId("item")
+            .setPlaceholder("Selecionar item")
+            .addOptions(options)
+        ),
+        buttons()
+      ]
+    });
   }
 
   // ================= ITEM =================
-  if (interaction.isStringSelectMenu() && interaction.customId === "item") {
+  if (i.isStringSelectMenu() && i.customId === "item") {
 
-    const [cat, item] = interaction.values[0].split("|");
+    const [cat, item] = i.values[0].split("|");
 
-    session.items.push({
-      cat,
-      item,
-      price: getPrice(cat, item)
-    });
+    s.items.push({ cat, item, price: price(cat, item) });
 
-    return interaction.reply({
-      content: "✔ Upgrade aplicado",
-      flags: EPHEMERAL
-    });
+    return i.reply({ content: "✔ Adicionado ao serviço", flags: EPHEMERAL });
   }
 
   // ================= FULL KIT =================
-  if (interaction.customId === "full") {
+  if (i.customId === "full") {
 
-    const keys = new Set(FULL_KIT.map(f => `${f.cat}|${f.item}`));
+    const keys = new Set(FULL_KIT.map(x => `${x.cat}|${x.item}`));
 
-    if (!session.full) {
-      session.items.push(...FULL_KIT);
-      session.full = true;
+    if (!s.full) {
+      s.items.push(...FULL_KIT);
+      s.full = true;
     } else {
-      session.items = session.items.filter(i =>
-        !keys.has(`${i.cat}|${i.item}`)
-      );
-      session.full = false;
+      s.items = s.items.filter(x => !keys.has(`${x.cat}|${x.item}`));
+      s.full = false;
     }
 
-    return interaction.update({
-      embeds: [panel(session)],
-      components: [menu(), buttons()]
-    }).catch(() => {});
+    return i.update({ embeds: [homePanel(s)], components: [menu()] });
   }
 
-  // ================= RESET =================
-  if (interaction.customId === "clear") {
+  // ================= CLEAR =================
+  if (i.customId === "clear") {
 
-    session.items = [];
-    session.full = false;
+    s.items = [];
+    s.full = false;
 
-    return interaction.update({
-      embeds: [panel(session)],
-      components: [menu(), buttons()]
-    }).catch(() => {});
+    return i.update({ embeds: [homePanel(s)], components: [menu()] });
   }
 
-  // ================= FINAL =================
-  if (interaction.customId === "finish") {
+  // ================= FINALIZAR (ENTERPRISE SERVICE) =================
+  if (i.customId === "finish") {
 
-    const total = session.items.reduce((a, b) => a + b.price, 0);
+    const total = s.items.reduce((a, b) => a + b.price, 0);
 
-    saveLog(session, interaction.user, total);
+    const serviceId = generateServiceId();
 
-    session.items = [];
-    session.full = false;
+    db.services.push({
+      id: serviceId,
+      client: i.user.username,
+      mechanic: i.user.username,
+      items: s.items,
+      total,
+      date: new Date().toLocaleString("pt-BR")
+    });
 
-    return interaction.reply({
-      content: `🚗 Serviço finalizado!\n💰 Total: R$ ${total}`,
+    s.items = [];
+    s.full = false;
+
+    return i.reply({
+      content:
+        `🚗 SERVIÇO FINALIZADO\n` +
+        `🆔 ID: ${serviceId}\n` +
+        `💰 TOTAL: R$ ${total}`,
       flags: EPHEMERAL
     });
   }
