@@ -1,327 +1,279 @@
 import "dotenv/config";
+import express from "express";
 import {
   Client,
   GatewayIntentBits,
-  EmbedBuilder,
   ActionRowBuilder,
-  StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
   REST,
   Routes,
   SlashCommandBuilder
 } from "discord.js";
 
+// 🌐 KEEP ALIVE
+const app = express();
+app.get("/", (_, res) => res.send("Bot online 🔥"));
+app.listen(3000);
+
+// 🔐 ENV
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+
+// 🛡️ STAFF ROLE
+const STAFF_ROLE = "1495178024797208588";
+
+// 🏥 CARGOS
+const EM_SERVICO = "1492553421973356795";
+const FORA_SERVICO = "1492553631642288160";
+
+// 🧠 SISTEMA
+let config = { painel: null, msgId: null };
+const pontos = new Map();
+const ranking = new Map();
+
+// 🚀 CLIENT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// ================= CONFIG =================
-const TOKEN = process.env.TOKEN?.trim();
-const CLIENT_ID = process.env.CLIENT_ID?.trim();
-const GUILD_ID = process.env.GUILD_ID?.trim();
-const EPHEMERAL = 1 << 6;
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-// ================= DB =================
-const db = { services: [] };
-
-// ================= SESSION =================
-const sessions = new Map();
-function session(id) {
-  if (!sessions.has(id)) {
-    sessions.set(id, { id, items: [], full: false });
-  }
-  return sessions.get(id);
+// ⏱ FORMAT
+function format(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor(ms % 3600000 / 60000);
+  return `${h}h ${m}m`;
 }
 
-// ================= SHOP =================
-const shop = {
-  freios: { street: 10000, sport: 15000, race: 20000 },
-  transmissao: { street: 10000, sport: 15000, race: 20000 },
-  suspensao: { "1": 5000, "2": 10000, "3": 15000, "4": 20000 },
-  motor: { street: 10000, sport: 20000, race: 30000, top: 40000 },
-  turbo: { "1": 60000 },
-  hidraulica: { padrao: 40000 },
+function tempoRelativo(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "há poucos segundos";
+  if (m === 1) return "há um minuto";
+  return `há ${m} minutos`;
+}
 
-  blindagem: { "20": 50000, "40": 60000, "60": 70000, "80": 80000, "100": 90000 },
-  visual: {
-    xenon: 40000,
-    neon: 30000,
-    rodas: 90000,
-    pintura: 20000,
-    spoiler: 20000,
-    escapamento: 10000
-  },
-  interior: {
-    banco: 30000,
-    volante: 35000,
-    som: 30000,
-    painel: 20000
-  },
-  vidros: {
-    fume100: 40000,
-    fume70: 40000,
-    fume50: 40000
-  }
-};
-
-const price = (c, i) => shop[c]?.[i] || 0;
-
-// ================= FULL KIT =================
-const FULL_KIT = [
-  { cat: "freios", item: "race", price: 20000 },
-  { cat: "transmissao", item: "race", price: 20000 },
-  { cat: "suspensao", item: "4", price: 20000 },
-  { cat: "motor", item: "top", price: 40000 },
-  { cat: "turbo", item: "1", price: 60000 },
-  { cat: "hidraulica", item: "padrao", price: 40000 }
+// 👑 HIERARQUIA
+const HIERARQUIA = [
+  { id: "1498037107535646872", nome: "Diretor 1" },
+  { id: "1498037107535646872", nome: "Diretor 2" },
+  { id: "1498037107535646872", nome: "Diretor 3" },
+  { id: "1477683902121509017", nome: "Vice Diretor" },
+  { id: "1477683902121509016", nome: "Supervisor" },
+  { id: "1477683902121509015", nome: "Coordenador 1" },
+  { id: "1477683902121509014", nome: "Coordenador 2" }
 ];
 
-// ================= UTILS =================
-function generateId() {
-  return `OS-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+function isStaff(member) {
+  return member?.roles?.cache?.has(STAFF_ROLE);
 }
 
-function formatItems(items) {
-  if (!items.length) return "Nenhum item selecionado";
-  return items.map(i =>
-    `🔧 ${i.cat.toUpperCase()} • ${i.item} — R$ ${i.price}`
-  ).join("\n");
-}
-
-// ================= HOME =================
-function home(s) {
-  const total = s.items.reduce((a, b) => a + b.price, 0);
-
-  return new EmbedBuilder()
-    .setTitle("🚗 OVER SPEED • GARAGEM")
-    .setColor(0x00ffcc)
-    .setDescription("Sistema profissional de tuning RP")
-    .addFields(
-      { name: "📦 ITENS", value: formatItems(s.items) },
-      { name: "💰 TOTAL", value: `R$ ${total}`, inline: true },
-      { name: "💎 FULL KIT", value: s.full ? "ON 🟢" : "OFF 🔴", inline: true }
-    )
-    .setFooter({ text: "OVER SPEED SYSTEM" })
-    .setTimestamp();
-}
-
-// ================= MENU =================
-function menu() {
+// 🔘 BOTÕES
+function row() {
   return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId("menu")
-      .setPlaceholder("Selecionar categoria")
-      .addOptions(
-        { label: "Motor", value: "motor" },
-        { label: "Freios", value: "freios" },
-        { label: "Transmissão", value: "transmissao" },
-        { label: "Suspensão", value: "suspensao" },
-        { label: "Turbo", value: "turbo" },
-        { label: "Hidráulica", value: "hidraulica" },
-        { label: "Blindagem", value: "blindagem" },
-        { label: "Visual", value: "visual" },
-        { label: "Interior", value: "interior" },
-        { label: "Vidros", value: "vidros" }
-      )
+    new ButtonBuilder()
+      .setCustomId("iniciar")
+      .setLabel("🟢 Iniciar")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("finalizar")
+      .setLabel("🔴 Finalizar")
+      .setStyle(ButtonStyle.Danger)
   );
 }
 
-// ================= BUTTONS =================
-function buttons() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("back").setLabel("⬅ Voltar").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("full").setLabel("💎 Full Kit").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("clear").setLabel("🧹 Limpar").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("finish").setLabel("💰 Finalizar").setStyle(ButtonStyle.Success)
-  );
-}
-
-// ================= COMMANDS =================
+// 📌 COMMANDS
 const commands = [
-  new SlashCommandBuilder().setName("oficina").setDescription("Abrir OVER SPEED"),
-  new SlashCommandBuilder().setName("prontuario").setDescription("Histórico de serviços")
+  new SlashCommandBuilder()
+    .setName("painelhp")
+    .setDescription("Criar painel hospital")
+    .addChannelOption(o =>
+      o.setName("canal").setDescription("Canal").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("rankinghp")
+    .setDescription("Ranking")
 ].map(c => c.toJSON());
 
-// ================= REGISTER =================
-async function register() {
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
+// 🔥 READY (SEM WARNING)
+client.once("clientReady", async () => {
+  console.log(`🔥 Online: ${client.user.tag}`);
+
   await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands }
   );
-}
 
-// ================= READY =================
-client.once("clientReady", async () => {
-  console.log(`🚗 OVER SPEED ONLINE: ${client.user.tag}`);
-  await register();
+  let updating = false;
+
+  setInterval(async () => {
+    if (updating) return;
+    updating = true;
+
+    try {
+      await updatePanel();
+    } catch (err) {
+      console.log(err.message);
+    }
+
+    updating = false;
+  }, 3000);
 });
 
-// ================= INTERACTIONS =================
-client.on("interactionCreate", async (i) => {
+// 🏥 PAINEL (SUA DESCRIÇÃO ORIGINAL MANTIDA)
+async function updatePanel() {
+  if (!config.painel || !config.msgId) return;
 
-  const s = session(i.user.id);
+  const channel = await client.channels.fetch(config.painel);
+  const msg = await channel.messages.fetch(config.msgId);
 
-  // OPEN
-  if (i.isChatInputCommand() && i.commandName === "oficina") {
-    return i.reply({
-      embeds: [home(s)],
-      components: [menu()]
-    });
+  let list = "";
+
+  for (const [id, data] of pontos) {
+    const time = Date.now() - data.inicio;
+    list += `👨‍⚕️ <@${id}> • ${tempoRelativo(time)}\n`;
   }
 
-  // PRONTUARIO
-  if (i.isChatInputCommand() && i.commandName === "prontuario") {
+  if (!list) list = "Nenhum médico em serviço";
 
-    if (!db.services.length) {
-      return i.reply({
-        content: "❌ Nenhum serviço registrado.",
-        flags: EPHEMERAL
-      });
-    }
+  const embed = new EmbedBuilder()
+    .setColor("#0f172a")
+    .setDescription(`
+🏥 ═════════════〔 HOSPITAL BELLA 〕═════════════
 
-    const last = db.services.slice(-5).reverse();
+ SISTEMA DE PLANTÃO EM FUNCIONAMENTO
 
-    const embeds = last.map(sv =>
-      new EmbedBuilder()
-        .setTitle(`📒 SERVIÇO ${sv.id}`)
-        .setColor(0x111111)
-        .setDescription(
-          `👨‍🔧 Mecânico: ${sv.mechanicName}\n` +
-          `🪪 ID: ${sv.mechanicId}\n\n` +
-          `🔧 Peças:\n${sv.items}\n\n` +
-          `💰 Total: R$ ${sv.total}\n` +
-          `📅 ${sv.date}`
-        )
-    );
+ RESPONSÁVEL DO PLANTÃO
+${getBossList(channel.guild)}
 
-    return i.reply({ embeds, flags: EPHEMERAL });
-  }
+────────────────────────────
 
-  // MENU
-  if (i.isStringSelectMenu() && i.customId === "menu") {
+ EQUIPE EM SERVIÇO
+${list}
 
-    const cat = i.values[0];
+────────────────────────────
 
-    const options = Object.keys(shop[cat]).map(x => ({
-      label: `${x} - R$ ${shop[cat][x]}`,
-      value: `${cat}|${x}`
-    }));
+ STATUS
+👥 Médicos ativos: ${pontos.size}
+🕒 Atualizado: <t:${Math.floor(Date.now() / 1000)}:R>
 
-    return i.update({
-      embeds: [new EmbedBuilder().setTitle(`🔧 ${cat.toUpperCase()}`)],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId("item")
-            .addOptions(options)
-        ),
-        buttons()
-      ]
-    });
-  }
+────────────────────────────
+🚨 OBSERVAÇÕES
+• Sistema automático de controle de plantão
+• Registro de horas em tempo real
+• Ranking atualizado continuamente
+• Não deixe o ponto aberto
 
-  // ITEM
-  if (i.isStringSelectMenu() && i.customId === "item") {
+🏥 Hospital Bella • Sistema Profissional
+`);
 
-    const [cat, item] = i.values[0].split("|");
+  await msg.edit({ embeds: [embed], components: [row()] });
+}
 
-    s.items.push({ cat, item, price: price(cat, item) });
+// 👑 FUNÇÃO CHEFES
+function getBossList(guild) {
+  const usados = new Set();
 
-    return i.update({
-      embeds: [home(s)],
-      components: [menu(), buttons()]
-    });
-  }
+  return HIERARQUIA.map(r => {
+    const role = guild.roles.cache.get(r.id);
+    if (!role) return `👑 Nenhum • ${r.nome}`;
 
-  // BACK
-  if (i.customId === "back") {
-    return i.update({
-      embeds: [home(s)],
-      components: [menu()]
-    });
-  }
+    const member = role.members.filter(m => !usados.has(m.id)).first();
+    if (!member) return `👑 Nenhum • ${r.nome}`;
 
-  // FULL
-  if (i.customId === "full") {
+    usados.add(member.id);
+    return `👑 <@${member.id}> • ${r.nome}`;
+  }).join("\n");
+}
 
-    const keys = new Set(FULL_KIT.map(x => `${x.cat}|${x.item}`));
+// 🎯 INTERAÇÕES + CARGOS
+client.on("interactionCreate", async (interaction) => {
 
-    if (!s.full) {
-      s.items.push(...FULL_KIT);
-      s.full = true;
+  if (!interaction.member) return;
+
+  const guild = interaction.guild;
+
+  async function setStatus(userId, inService) {
+    const member = await guild.members.fetch(userId);
+
+    if (inService) {
+      await member.roles.add(EM_SERVICO).catch(() => {});
+      await member.roles.remove(FORA_SERVICO).catch(() => {});
     } else {
-      s.items = s.items.filter(x => !keys.has(`${x.cat}|${x.item}`));
-      s.full = false;
+      await member.roles.add(FORA_SERVICO).catch(() => {});
+      await member.roles.remove(EM_SERVICO).catch(() => {});
+    }
+  }
+
+  if (interaction.isChatInputCommand()) {
+
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ content: "❌ Sem permissão", ephemeral: true });
     }
 
-    return i.update({
-      embeds: [home(s)],
-      components: [menu(), buttons()]
-    });
-  }
+    if (interaction.commandName === "painelhp") {
+      const canal = interaction.options.getChannel("canal");
 
-  // CLEAR
-  if (i.customId === "clear") {
-    s.items = [];
-    s.full = false;
+      config.painel = canal.id;
 
-    return i.update({
-      embeds: [home(s)],
-      components: [menu(), buttons()]
-    });
-  }
+      const msg = await canal.send({
+        embeds: [new EmbedBuilder().setDescription("🏥 Painel ativo").setColor("#0f172a")],
+        components: [row()]
+      });
 
-  // FINISH
-  if (i.customId === "finish") {
+      config.msgId = msg.id;
 
-    if (!s.items.length) {
-      return i.reply({
-        content: "❌ Nenhuma modificação aplicada!",
-        flags: EPHEMERAL
+      return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
+    }
+
+    if (interaction.commandName === "rankinghp") {
+      const top = [...ranking.entries()]
+        .sort((a,b) => b[1]-a[1])
+        .map(([id,t]) => `<@${id}> • ${format(t)}`)
+        .join("\n");
+
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setTitle("🏆 Ranking").setDescription(top || "Sem dados")]
       });
     }
-
-    const total = s.items.reduce((a, b) => a + b.price, 0);
-    const id = generateId();
-
-    const mechanicName = i.user.username;
-    const mechanicId = i.user.id;
-
-    const itemsText = formatItems(s.items);
-    const date = new Date().toLocaleString("pt-BR");
-
-    db.services.push({
-      id,
-      mechanicName,
-      mechanicId,
-      items: itemsText,
-      total,
-      date
-    });
-
-    const embed = new EmbedBuilder()
-      .setTitle("📒 ORDEM DE SERVIÇO FINALIZADA")
-      .setColor(0x00ffcc)
-      .setDescription(
-        `🆔 ${id}\n` +
-        `👨‍🔧 ${mechanicName}\n` +
-        `🪪 ${mechanicId}\n\n` +
-        `${itemsText}\n\n` +
-        `💰 R$ ${total}\n` +
-        `📅 ${date}`
-      );
-
-    s.items = [];
-    s.full = false;
-
-    return i.reply({
-      embeds: [embed],
-      flags: EPHEMERAL
-    });
   }
 
+  if (interaction.isButton()) {
+
+    const id = interaction.user.id;
+
+    if (interaction.customId === "iniciar") {
+      if (pontos.has(id))
+        return interaction.reply({ content: "❌ Já em serviço", ephemeral: true });
+
+      pontos.set(id, { inicio: Date.now() });
+      await setStatus(id, true);
+
+      return interaction.reply({ content: "🟢 Iniciado!", ephemeral: true });
+    }
+
+    if (interaction.customId === "finalizar") {
+      const p = pontos.get(id);
+      if (!p)
+        return interaction.reply({ content: "❌ Não iniciou", ephemeral: true });
+
+      const time = Date.now() - p.inicio;
+
+      ranking.set(id, (ranking.get(id) || 0) + time);
+      pontos.delete(id);
+
+      await setStatus(id, false);
+
+      return interaction.reply({
+        content: `🔴 Finalizado • ${format(time)}`,
+        ephemeral: true
+      });
+    }
+  }
 });
 
 client.login(TOKEN);
